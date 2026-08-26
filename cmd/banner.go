@@ -1,0 +1,37 @@
+package cmd
+
+import (
+	"time"
+
+	"github.com/specter-recon/recon-tool/core"
+	"github.com/specter-recon/recon-tool/modules"
+	"github.com/spf13/cobra"
+)
+
+var (
+	bannerInputFlag  string
+	bannerOutputFlag string
+)
+
+var bannerCmd = &cobra.Command{
+	Use:   "banner",
+	Short: "Açık portlar için banner grabbing ve versiyon tespiti yapar",
+	Run: func(cmd *cobra.Command, args []string) {
+		core.PrintBanner(version)
+		ports, err := core.LoadPorts(bannerInputFlag)
+		if err != nil || len(ports) == 0 {
+			core.LogError("Port listesi okunamadı veya boş: %s", bannerInputFlag)
+			return
+		}
+
+		services, _ := modules.GrabBannersAndServices(ports, 30, 3500*time.Millisecond, bannerOutputFlag)
+		core.PrintServicesTable(services)
+	},
+}
+
+func init() {
+	bannerCmd.Flags().StringVarP(&bannerInputFlag, "input", "i", "output/ports.json", "Açık portlar JSON dosyası")
+	bannerCmd.Flags().StringVarP(&bannerOutputFlag, "output", "o", "output/services.json", "Çıktı JSON dosyası")
+
+	RootCmd.AddCommand(bannerCmd)
+}
