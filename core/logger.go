@@ -279,12 +279,203 @@ func PrintDirFindingsTable(findings []DirFuzzFinding) {
 		WithData(tableData).Render()
 }
 
+// PrintSslTable displays SSL audit findings in a styled terminal table.
+func PrintSslTable(findings []SslFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	tableData := pterm.TableData{
+		{"IP:Port", "Sertifika Konusu", "Son Kullanma", "Kalan Gün", "Risk/Notlar"},
+	}
+	for _, f := range findings {
+		days := strconv.Itoa(f.DaysUntilExpiry)
+		if f.IsExpired {
+			days = "SÜRESİ DOLMUŞ!"
+		}
+		notes := strings.Join(f.Notes, "; ")
+		if len(notes) > 40 {
+			notes = notes[:37] + "..."
+		}
+		tableData = append(tableData, []string{
+			fmt.Sprintf("%s:%d", f.IP, f.Port),
+			f.Subject,
+			f.ExpiryDate,
+			days,
+			notes,
+		})
+	}
+	pterm.Println()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgLightCyan, pterm.Bold)).
+		WithData(tableData).Render()
+}
+
+// PrintHttpAuditTable displays HTTP security audit findings in a terminal table.
+func PrintHttpAuditTable(findings []HttpAuditFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	tableData := pterm.TableData{
+		{"URL", "Eksik Headerlar", "Tehlikeli Metodlar", "CORS/GrafQL", "Şiddet"},
+	}
+	for _, f := range findings {
+		missing := strings.Join(f.MissingHeaders, ", ")
+		if len(missing) > 30 {
+			missing = missing[:27] + "..."
+		}
+		methods := strings.Join(f.DangerousMethods, ", ")
+		corsGql := "-"
+		if len(f.CORSIssues) > 0 {
+			corsGql = "CORS Risk"
+		}
+		if f.GraphQLOpen {
+			if corsGql != "-" {
+				corsGql += " | GraphQL"
+			} else {
+				corsGql = "GraphQL Introspect"
+			}
+		}
+		tableData = append(tableData, []string{
+			f.URL,
+			missing,
+			methods,
+			corsGql,
+			f.Severity,
+		})
+	}
+	pterm.Println()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgLightBlue, pterm.Bold)).
+		WithData(tableData).Render()
+}
+
+// PrintSmbTable displays SMB enumeration findings in a terminal table.
+func PrintSmbTable(findings []SmbFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	tableData := pterm.TableData{
+		{"IP:Port", "NetBIOS / Domain", "Null Session", "SMB Signing", "Paylaşımlar"},
+	}
+	for _, f := range findings {
+		nullSess := "Hayır"
+		if f.NullSession {
+			nullSess = "⚠️ EVET"
+		}
+		signing := "Aktif"
+		if f.SigningDisabled {
+			signing = "⚠️ DEVRE DIŞI"
+		}
+		shares := strings.Join(f.Shares, ", ")
+		if len(shares) > 30 {
+			shares = shares[:27] + "..."
+		}
+		tableData = append(tableData, []string{
+			fmt.Sprintf("%s:%d", f.IP, f.Port),
+			fmt.Sprintf("%s (%s)", f.NetbiosName, f.Domain),
+			nullSess,
+			signing,
+			shares,
+		})
+	}
+	pterm.Println()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgGreen, pterm.Bold)).
+		WithData(tableData).Render()
+}
+
+// PrintFtpTable displays FTP audit findings in a terminal table.
+func PrintFtpTable(findings []FtpFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	tableData := pterm.TableData{
+		{"IP:Port", "Banner", "Anonymous Giriş", "Anonymous Yazma", "FTPS (TLS)"},
+	}
+	for _, f := range findings {
+		anon := "Hayır"
+		if f.AnonLogin {
+			anon = "⚠️ EVET"
+		}
+		write := "Hayır"
+		if f.AnonWritable {
+			write = "⚠️ EVET"
+		}
+		ftps := "Evet"
+		if !f.FTPSEnabled {
+			ftps = "Hayır"
+		}
+		tableData = append(tableData, []string{
+			fmt.Sprintf("%s:%d", f.IP, f.Port),
+			f.Banner,
+			anon,
+			write,
+			ftps,
+		})
+	}
+	pterm.Println()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgLightMagenta, pterm.Bold)).
+		WithData(tableData).Render()
+}
+
+// PrintDbTable displays database audit findings in a terminal table.
+func PrintDbTable(findings []DbFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	tableData := pterm.TableData{
+		{"IP:Port", "DB Tipi", "Versiyon", "Anonim Access", "Default Creds"},
+	}
+	for _, f := range findings {
+		anon := "Hayır"
+		if f.AnonAccess {
+			anon = "🚨 EVET (NO AUTH)"
+		}
+		defCred := "Hayır"
+		if f.DefaultCreds {
+			defCred = fmt.Sprintf("🚨 %s:%s", f.Username, f.Password)
+		}
+		tableData = append(tableData, []string{
+			fmt.Sprintf("%s:%d", f.IP, f.Port),
+			f.DbType,
+			f.Version,
+			anon,
+			defCred,
+		})
+	}
+	pterm.Println()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgRed, pterm.Bold)).
+		WithData(tableData).Render()
+}
+
+// PrintCredTable displays successful default credential attempts.
+func PrintCredTable(findings []CredFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	tableData := pterm.TableData{
+		{"IP:Port", "Protokol", "Kullanıcı Adı", "Parola", "Şiddet"},
+	}
+	for _, f := range findings {
+		tableData = append(tableData, []string{
+			fmt.Sprintf("%s:%d", f.IP, f.Port),
+			f.Protocol,
+			f.Username,
+			f.Password,
+			"🚨 " + f.Severity,
+		})
+	}
+	pterm.Println()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgRed, pterm.Bold)).
+		WithData(tableData).Render()
+}
+
 // PrintSummaryTable displays final executive scan summary.
 func PrintSummaryTable(report CompleteScanReport) {
 	pterm.Println()
 	tableData := pterm.TableData{
 		{"Metrik", "Değer"},
 		{"Taranan Hedef", report.Target},
+	}
+	if report.ScanProfile != "" {
+		tableData = append(tableData, []string{"Tarama Profili", report.ScanProfile})
 	}
 	if report.TotalDNSRecords > 0 {
 		tableData = append(tableData, []string{"Çözümlenen DNS Kayıtları", strconv.Itoa(report.TotalDNSRecords)})
@@ -302,4 +493,5 @@ func PrintSummaryTable(report CompleteScanReport) {
 	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
 		WithData(tableData).Render()
 }
+
 

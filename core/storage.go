@@ -176,8 +176,95 @@ func SaveFindings(findings []DirFuzzFinding, jsonPath, txtPath string) error {
 	return nil
 }
 
+// SaveSslFindings writes SSL findings to JSON.
+func SaveSslFindings(findings []SslFinding, path string) error {
+	if path == "" {
+		path = "output/ssl_findings.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveHttpAuditFindings writes HTTP audit findings to JSON.
+func SaveHttpAuditFindings(findings []HttpAuditFinding, path string) error {
+	if path == "" {
+		path = "output/http_audit.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveSmbFindings writes SMB findings to JSON.
+func SaveSmbFindings(findings []SmbFinding, path string) error {
+	if path == "" {
+		path = "output/smb_findings.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveFtpFindings writes FTP findings to JSON.
+func SaveFtpFindings(findings []FtpFinding, path string) error {
+	if path == "" {
+		path = "output/ftp_findings.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveSmtpFindings writes SMTP findings to JSON.
+func SaveSmtpFindings(findings []SmtpFinding, path string) error {
+	if path == "" {
+		path = "output/smtp_findings.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveSnmpFindings writes SNMP findings to JSON.
+func SaveSnmpFindings(findings []SnmpFinding, path string) error {
+	if path == "" {
+		path = "output/snmp_findings.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveDbFindings writes database findings to JSON.
+func SaveDbFindings(findings []DbFinding, path string) error {
+	if path == "" {
+		path = "output/db_findings.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveSshAuditFindings writes SSH audit findings to JSON.
+func SaveSshAuditFindings(findings []SshAuditFinding, path string) error {
+	if path == "" {
+		path = "output/ssh_audit.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveCredFindings writes credential findings to JSON.
+func SaveCredFindings(findings []CredFinding, path string) error {
+	if path == "" {
+		path = "output/creds_found.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveContainerFindings writes container/cloud findings to JSON.
+func SaveContainerFindings(findings []ContainerFinding, path string) error {
+	if path == "" {
+		path = "output/container_findings.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// SaveLdapFindings writes LDAP findings to JSON.
+func SaveLdapFindings(findings []LdapFinding, path string) error {
+	if path == "" {
+		path = "output/ldap_findings.json"
+	}
+	return SaveJSON(findings, path)
+}
+
 // SaveSummaryTxt writes a single human-readable summary of all scan results to a .txt file.
-// Bu fonksiyon tüm bulgular (host, port, vuln, dirfuzz) için tek bir okunabilir özet üretir.
 func SaveSummaryTxt(
 	target string,
 	hosts []HostInfo,
@@ -187,6 +274,7 @@ func SaveSummaryTxt(
 	findings []DirFuzzFinding,
 	durationSec float64,
 	outPath string,
+	opts ...interface{},
 ) error {
 	if outPath == "" {
 		outPath = "output/summary.txt"
@@ -285,7 +373,164 @@ func SaveSummaryTxt(
 	}
 	w("")
 
-	// Özet
+	// opts içindeki ek modül bulgularını yaz
+	for _, opt := range opts {
+		switch v := opt.(type) {
+		case []SslFinding:
+			if len(v) > 0 {
+				w("[SSL/TLS BULGULARI] (%d)", len(v))
+				for _, s := range v {
+					for _, note := range s.Notes {
+						w("  !! %s:%d — %s", s.IP, s.Port, note)
+					}
+				}
+				w("")
+			}
+		case []HttpAuditFinding:
+			if len(v) > 0 {
+				w("[WEB GÜVENLİK DENETİMİ] (%d)", len(v))
+				for _, h := range v {
+					for _, m := range h.MissingHeaders {
+						w("  !! %s — EKSİK HEADER: %s", h.URL, m)
+					}
+					for _, m := range h.DangerousMethods {
+						w("  !! %s — TEHLİKELİ HTTP METOD: %s", h.URL, m)
+					}
+					for _, c := range h.CORSIssues {
+						w("  !! %s — CORS SORUNU: %s", h.URL, c)
+					}
+					if h.GraphQLOpen {
+						w("  !! %s — GraphQL introspection AÇIK", h.URL)
+					}
+				}
+				w("")
+			}
+		case []SmbFinding:
+			if len(v) > 0 {
+				w("[SMB BULGULARI] (%d)", len(v))
+				for _, s := range v {
+					if s.NullSession {
+						w("  !! %s:%d — NULL SESSION AKTİF", s.IP, s.Port)
+					}
+					if s.SigningDisabled {
+						w("  !! %s:%d — SMB SIGNING DEVRE DIŞI (relay riski)", s.IP, s.Port)
+					}
+					if s.SMBv1Enabled {
+						w("  !! %s:%d — SMBv1 AKTİF (EternalBlue riski)", s.IP, s.Port)
+					}
+					for _, share := range s.Shares {
+						w("  + %s — Paylaşım: %s", s.IP, share)
+					}
+				}
+				w("")
+			}
+		case []FtpFinding:
+			if len(v) > 0 {
+				w("[FTP BULGULARI] (%d)", len(v))
+				for _, f := range v {
+					if f.AnonLogin {
+						w("  !! %s:%d — ANONYMOUS FTP GİRİŞİ MÜMKÜN", f.IP, f.Port)
+					}
+					if f.AnonWritable {
+						w("  !! %s:%d — ANONYMOUS YAZMA YETKİSİ VAR", f.IP, f.Port)
+					}
+					if !f.FTPSEnabled {
+						w("  !! %s:%d — FTPS (TLS) DEVRE DIŞI", f.IP, f.Port)
+					}
+				}
+				w("")
+			}
+		case []SmtpFinding:
+			if len(v) > 0 {
+				w("[SMTP BULGULARI] (%d)", len(v))
+				for _, s := range v {
+					if s.OpenRelay {
+						w("  !! %s:%d — OPEN RELAY TESPİT EDİLDİ", s.IP, s.Port)
+					}
+					if s.VRFYEnabled {
+						w("  !! %s:%d — VRFY KOMUTU AKTİF (kullanıcı enum)", s.IP, s.Port)
+					}
+				}
+				w("")
+			}
+		case []SnmpFinding:
+			if len(v) > 0 {
+				w("[SNMP BULGULARI] (%d)", len(v))
+				for _, s := range v {
+					w("  !! %s:%d — SNMP '%s' community string ile erişildi (%s)", s.IP, s.Port, s.Community, s.Version)
+					if s.SysName != "" {
+						w("  +  Cihaz: %s — %s", s.SysName, s.SysDescr)
+					}
+				}
+				w("")
+			}
+		case []DbFinding:
+			if len(v) > 0 {
+				w("[VERİTABANI BULGULARI] (%d)", len(v))
+				for _, d := range v {
+					if d.AnonAccess {
+						w("  !! %s:%d [%s] — KİMLİK DOĞRULAMASIZ ERİŞİM MÜMKÜN", d.IP, d.Port, d.DbType)
+					}
+					if d.DefaultCreds {
+						w("  !! %s:%d [%s] — DEFAULT KREDİ BAŞARILI: %s/%s", d.IP, d.Port, d.DbType, d.Username, d.Password)
+					}
+				}
+				w("")
+			}
+		case []SshAuditFinding:
+			if len(v) > 0 {
+				w("[SSH DENETİMİ] (%d)", len(v))
+				for _, s := range v {
+					if s.RootLoginOn {
+						w("  !! %s:%d — ROOT GİRİŞİ AÇIK", s.IP, s.Port)
+					}
+					if s.PasswordAuthOn {
+						w("  !! %s:%d — PAROLA TABANLI KİMLİK DOĞRULAMA AKTİF", s.IP, s.Port)
+					}
+					for _, alg := range s.WeakAlgorithms {
+						w("  !! %s:%d — ZAYIF ALGORİTMA: %s", s.IP, s.Port, alg)
+					}
+				}
+				w("")
+			}
+		case []CredFinding:
+			if len(v) > 0 {
+				w("[VARSAYILAN KREDİ BULGULARI] (%d)", len(v))
+				for _, c := range v {
+					w("  !! %s:%d [%s] — GİRİŞ BAŞARILI: %s / %s", c.IP, c.Port, c.Protocol, c.Username, c.Password)
+				}
+				w("")
+			}
+		case []ContainerFinding:
+			if len(v) > 0 {
+				w("[CONTAINER/CLOUD BULGULARI] (%d)", len(v))
+				for _, c := range v {
+					if c.Exposed {
+						w("  !! %s:%d [%s] — KİMLİK DOĞRULAMASIZ ERİŞİM AÇIK", c.IP, c.Port, c.Service)
+					}
+					for _, ep := range c.Endpoints {
+						w("  +  Endpoint: %s", ep)
+					}
+				}
+				w("")
+			}
+		case []LdapFinding:
+			if len(v) > 0 {
+				w("[LDAP/AD BULGULARI] (%d)", len(v))
+				for _, l := range v {
+					if l.AnonymousBind {
+						w("  !! %s:%d — ANONIM LDAP BIND MÜMKÜN", l.IP, l.Port)
+					}
+					if l.DomainName != "" {
+						w("  +  Domain: %s (%s)", l.DomainName, l.ServerType)
+					}
+				}
+				w("")
+			}
+		}
+	}
+
+	// Özet sayaçları
 	critCount := 0
 	for _, v := range vulns {
 		if v.Severity == "CRITICAL" || v.Severity == "HIGH" {
@@ -309,4 +554,5 @@ func SaveSummaryTxt(
 
 	return nil
 }
+
 
