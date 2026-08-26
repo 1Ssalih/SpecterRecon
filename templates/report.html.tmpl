@@ -3,97 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SpecterRecon Raporu — {{ .Target }}</title>
+  <title>SpecterRecon SOC Raporu — {{ .Target }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-dark: #0a0e17;
-      --bg-card: rgba(18, 26, 43, 0.75);
-      --bg-card-hover: rgba(26, 38, 64, 0.85);
-      --border-color: rgba(64, 93, 140, 0.3);
-      --text-main: #e2e8f0;
-      --text-muted: #94a3b8;
-      --cyan-accent: #00f2fe;
-      --blue-accent: #4facfe;
+      --bg-dark: #0d1117;
+      --bg-card: #161b22;
+      --bg-card-hover: #21262d;
+      --border-color: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --cyan-accent: #38bdf8;
+      --blue-accent: #6366f1;
       --purple-accent: #a855f7;
-      --crit-color: #ff3366;
-      --high-color: #ff9900;
-      --med-color: #facc15;
-      --low-color: #38bdf8;
+      --crit-color: #f43f5e;
+      --high-color: #f97316;
+      --med-color: #eab308;
+      --low-color: #0ea5e9;
       --success-color: #10b981;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background-color: var(--bg-dark);
-      background-image: 
-        radial-gradient(at 0% 0%, rgba(0, 242, 254, 0.08) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(79, 172, 254, 0.06) 0px, transparent 50%);
       color: var(--text-main);
-      font-family: 'Outfit', sans-serif;
-      line-height: 1.6;
-      padding: 2.5rem 1.5rem;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      padding: 1.75rem 1rem;
       min-height: 100vh;
     }
-    .container { max-width: 1300px; margin: 0 auto; }
+    .container { max-width: 1240px; margin: 0 auto; }
     header {
       background: var(--bg-card);
-      backdrop-filter: blur(16px);
       border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 2rem;
-      margin-bottom: 2rem;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
-      gap: 1.5rem;
+      gap: 1rem;
     }
     .header-title h1 {
-      font-size: 2.2rem;
-      font-weight: 800;
-      background: linear-gradient(135deg, var(--cyan-accent), var(--blue-accent));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      letter-spacing: -0.5px;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #f0f6fc;
+      letter-spacing: -0.3px;
     }
-    .header-title p { color: var(--text-muted); margin-top: 0.25rem; font-size: 0.95rem; }
+    .header-title p { color: var(--text-muted); margin-top: 0.15rem; font-size: 0.8rem; }
     .header-meta {
       display: flex;
-      gap: 1.5rem;
-      background: rgba(10, 14, 23, 0.6);
-      padding: 0.8rem 1.4rem;
-      border-radius: 12px;
+      gap: 1.25rem;
+      background: #0d1117;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
       border: 1px solid var(--border-color);
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.85rem;
+      font-size: 0.78rem;
     }
-    .meta-item span { color: var(--cyan-accent); font-weight: bold; }
+    .meta-item span { color: var(--cyan-accent); font-weight: 600; }
     .metric-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1.25rem;
-      margin-bottom: 2.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.75rem;
     }
     .metric-card {
       background: var(--bg-card);
-      backdrop-filter: blur(12px);
       border: 1px solid var(--border-color);
-      border-radius: 14px;
-      padding: 1.5rem;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
       position: relative;
       overflow: hidden;
-      transition: transform 0.2s ease, border-color 0.2s ease;
+      transition: border-color 0.15s ease;
     }
-    .metric-card:hover { transform: translateY(-3px); border-color: var(--cyan-accent); }
+    .metric-card:hover { border-color: #58a6ff; }
     .metric-card::before {
       content: '';
       position: absolute;
       top: 0;
       left: 0;
-      width: 4px;
+      width: 3px;
       height: 100%;
       background: var(--cyan-accent);
     }
@@ -103,104 +96,105 @@
     .metric-card.dirs::before { background: var(--success-color); }
     .metric-card.dns::before { background: var(--purple-accent); }
     .metric-title {
-      font-size: 0.85rem;
+      font-size: 0.7rem;
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0.8px;
       color: var(--text-muted);
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.3rem;
+      font-weight: 600;
     }
     .metric-value {
-      font-size: 2.2rem;
-      font-weight: 800;
-      color: #ffffff;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #f0f6fc;
       font-family: 'JetBrains Mono', monospace;
     }
     .section-card {
       background: var(--bg-card);
-      backdrop-filter: blur(16px);
       border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 1.75rem;
-      margin-bottom: 2rem;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
     }
     .section-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 1.25rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      padding-bottom: 0.75rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.6rem;
     }
     .section-title {
-      font-size: 1.35rem;
-      font-weight: 700;
-      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #f0f6fc;
       display: flex;
       align-items: center;
-      gap: 0.6rem;
+      gap: 0.5rem;
     }
     .section-badge {
-      background: rgba(0, 242, 254, 0.15);
+      background: rgba(56, 189, 248, 0.1);
       color: var(--cyan-accent);
-      padding: 0.2rem 0.7rem;
-      border-radius: 20px;
-      font-size: 0.8rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
       font-family: 'JetBrains Mono', monospace;
+      border: 1px solid rgba(56, 189, 248, 0.2);
     }
     .table-container { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
     th {
       text-align: left;
-      padding: 0.9rem 1rem;
-      background: rgba(10, 14, 23, 0.6);
+      padding: 0.6rem 0.8rem;
+      background: #0d1117;
       color: var(--text-muted);
       font-weight: 600;
       text-transform: uppercase;
-      font-size: 0.75rem;
-      letter-spacing: 0.8px;
+      font-size: 0.7rem;
+      letter-spacing: 0.6px;
       border-bottom: 1px solid var(--border-color);
     }
-    td { padding: 1rem; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: middle; }
+    td { padding: 0.65rem 0.8rem; border-bottom: 1px solid rgba(48, 54, 61, 0.5); vertical-align: middle; }
     tr:hover td { background: var(--bg-card-hover); }
     .badge {
       display: inline-block;
-      padding: 0.25rem 0.65rem;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: 5px;
+      font-size: 0.7rem;
+      font-weight: 600;
       font-family: 'JetBrains Mono', monospace;
       text-transform: uppercase;
     }
-    .badge-crit { background: rgba(255, 51, 102, 0.2); color: var(--crit-color); border: 1px solid rgba(255, 51, 102, 0.4); }
-    .badge-high { background: rgba(255, 153, 0, 0.2); color: var(--high-color); border: 1px solid rgba(255, 153, 0, 0.4); }
-    .badge-med { background: rgba(250, 204, 21, 0.2); color: var(--med-color); border: 1px solid rgba(250, 204, 21, 0.4); }
-    .badge-low { background: rgba(56, 189, 248, 0.2); color: var(--low-color); border: 1px solid rgba(56, 189, 248, 0.4); }
-    .badge-open { background: rgba(16, 185, 129, 0.2); color: var(--success-color); border: 1px solid rgba(16, 185, 129, 0.4); }
-    .badge-dns { background: rgba(168, 85, 247, 0.2); color: var(--purple-accent); border: 1px solid rgba(168, 85, 247, 0.4); }
+    .badge-crit { background: rgba(244, 63, 94, 0.15); color: var(--crit-color); border: 1px solid rgba(244, 63, 94, 0.3); }
+    .badge-high { background: rgba(249, 115, 22, 0.15); color: var(--high-color); border: 1px solid rgba(249, 115, 22, 0.3); }
+    .badge-med { background: rgba(234, 179, 8, 0.15); color: var(--med-color); border: 1px solid rgba(234, 179, 8, 0.3); }
+    .badge-low { background: rgba(14, 165, 233, 0.15); color: var(--low-color); border: 1px solid rgba(14, 165, 233, 0.3); }
+    .badge-open { background: rgba(16, 185, 129, 0.15); color: var(--success-color); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-dns { background: rgba(168, 85, 247, 0.15); color: var(--purple-accent); border: 1px solid rgba(168, 85, 247, 0.3); }
     .code-tag {
       font-family: 'JetBrains Mono', monospace;
-      background: rgba(0, 0, 0, 0.4);
-      padding: 0.2rem 0.5rem;
+      background: #0d1117;
+      padding: 0.15rem 0.4rem;
       border-radius: 4px;
-      font-size: 0.82rem;
+      font-size: 0.78rem;
       color: var(--cyan-accent);
+      border: 1px solid var(--border-color);
     }
-    .vuln-desc { color: #cbd5e1; font-size: 0.88rem; max-width: 500px; }
+    .vuln-desc { color: #8b949e; font-size: 0.8rem; max-width: 480px; }
     .ref-link {
-      color: var(--blue-accent);
+      color: #58a6ff;
       text-decoration: none;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       font-family: 'JetBrains Mono', monospace;
     }
-    .ref-link:hover { color: var(--cyan-accent); text-decoration: underline; }
+    .ref-link:hover { text-decoration: underline; }
     footer {
       text-align: center;
-      margin-top: 3rem;
+      margin-top: 2.5rem;
       color: var(--text-muted);
-      font-size: 0.85rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 0.78rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border-color);
     }
   </style>
 </head>
@@ -208,7 +202,7 @@
   <div class="container">
     <header>
       <div class="header-title">
-        <h1>SpecterRecon Güvenlik Raporu</h1>
+        <h1>SpecterRecon SOC Güvenlik Raporu</h1>
         <p>Otomatik Zafiyet & Keşif Analizi Sonuçları (Go Engine)</p>
       </div>
       <div class="header-meta">
@@ -221,7 +215,7 @@
     <div class="metric-grid">
       {{ if gt .TotalDNSRecords 0 }}
       <div class="metric-card dns">
-        <div class="metric-title">DNS Kayıtları / Host</div>
+        <div class="metric-title">DNS Kayıtları</div>
         <div class="metric-value">{{ .TotalDNSRecords }}</div>
       </div>
       {{ end }}
@@ -238,7 +232,7 @@
         <div class="metric-value">{{ .TotalVulns }}</div>
       </div>
       <div class="metric-card dirs">
-        <div class="metric-title">Web Bulguları / Yollar</div>
+        <div class="metric-title">Web Bulguları</div>
         <div class="metric-value">{{ .TotalFindings }}</div>
       </div>
     </div>
@@ -247,7 +241,7 @@
     <!-- DNS Enumeration & Subdomains -->
     <div class="section-card">
       <div class="section-header">
-        <div class="section-title"><span>📡</span> Modül 0: DNS Enumeration & Subdomainler</div>
+        <div class="section-title"><span>📡</span> DNS Enumeration & Subdomainler</div>
         <span class="section-badge">{{ len .DNSFindings }} Kayıt</span>
       </div>
       <div class="table-container">
@@ -292,11 +286,11 @@
           <thead>
             <tr>
               <th>IP & Hostname</th>
-              <th>MAC & Yöntem</th>
+              <th>Yöntem</th>
               <th>Açık Port</th>
               <th>Servis Adı</th>
-              <th>Versiyon & Başlık</th>
-              <th>Banner / Detay</th>
+              <th>Versiyon / Başlık</th>
+              <th>Banner Detay</th>
             </tr>
           </thead>
           <tbody>
@@ -357,7 +351,7 @@
               {{ range .Vulnerabilities }}
                 {{ $vulnCount = 1 }}
                 <tr>
-                  <td><strong style="color: #fff; font-family:'JetBrains Mono'">{{ .CVEID }}</strong></td>
+                  <td><strong style="color: #f0f6fc; font-family:'JetBrains Mono'">{{ .CVEID }}</strong></td>
                   <td>
                     {{ if eq .Severity "CRITICAL" }}
                       <span class="badge badge-crit">CRITICAL ({{ printf "%.1f" .CVSSScore }})</span>
@@ -373,7 +367,7 @@
                   <td class="vuln-desc">{{ .Description }}</td>
                   <td>
                     {{ if .Mitigation }}
-                      <div style="margin-bottom:0.3rem; font-size:0.8rem; color:var(--success-color)"><strong>Öneri:</strong> {{ .Mitigation }}</div>
+                      <div style="margin-bottom:0.2rem; font-size:0.78rem; color:var(--success-color)"><strong>Öneri:</strong> {{ .Mitigation }}</div>
                     {{ end }}
                     {{ range .References }}
                       <a href="{{ . }}" target="_blank" class="ref-link">🔗 Referans</a><br>
@@ -384,7 +378,7 @@
             {{ end }}
             {{ if eq .TotalVulns 0 }}
               <tr>
-                <td colspan="5" style="text-align:center; color:var(--success-color); padding: 2rem;">
+                <td colspan="5" style="text-align:center; color:var(--success-color); padding: 1.5rem;">
                   ✅ Taranan servislerde bilinen kritik CVE zafiyeti bulunamadı.
                 </td>
               </tr>
@@ -397,7 +391,7 @@
     <!-- Web Findings -->
     <div class="section-card">
       <div class="section-header">
-        <div class="section-title"><span>📁</span> Web Dizin & Dosya Bulguları (Akıllı Fuzzer)</div>
+        <div class="section-title"><span>📁</span> Web Dizin & Dosya Bulguları (Fuzzer)</div>
         <span class="section-badge">{{ .TotalFindings }} Bulgu</span>
       </div>
       <div class="table-container">
@@ -441,7 +435,7 @@
                     {{ else if .WordlistMatched }}
                       <span class="badge badge-dns">📁 {{ .WordlistMatched }}</span>
                     {{ else }}
-                      <span style="color:var(--text-muted); font-size:0.8rem">Standart</span>
+                      <span style="color:var(--text-muted); font-size:0.75rem">Standart</span>
                     {{ end }}
                   </td>
                 </tr>
@@ -449,7 +443,7 @@
             {{ end }}
             {{ if eq .TotalFindings 0 }}
               <tr>
-                <td colspan="5" style="text-align:center; color:var(--text-muted); padding: 2rem;">
+                <td colspan="5" style="text-align:center; color:var(--text-muted); padding: 1.5rem;">
                   Web dizin taraması yapılmadı veya ek bulgu tespit edilmedi.
                 </td>
               </tr>
@@ -457,6 +451,8 @@
           </tbody>
         </table>
       </div>
+    </div>
+
     <!-- Extended Pentest Module Findings -->
     {{ if .SslFindings }}
     <div class="section-card">
@@ -477,7 +473,7 @@
               <td><span class="code-tag">{{ .ExpiryDate }}</span></td>
               <td>{{ if .IsExpired }}<span class="badge badge-crit">SÜRESİ DOLMUŞ</span>{{ else }}<span class="badge badge-open">{{ .DaysUntilExpiry }} Gün</span>{{ end }}</td>
               <td>
-                {{ range .Notes }}<div style="font-size:0.85rem; color:var(--med-color)">⚠️ {{ . }}</div>{{ end }}
+                {{ range .Notes }}<div style="font-size:0.78rem; color:var(--med-color)">⚠️ {{ . }}</div>{{ end }}
               </td>
             </tr>
             {{ end }}
@@ -506,7 +502,7 @@
               <td>{{ if .NullSession }}<span class="badge badge-crit">⚠️ EVET</span>{{ else }}<span class="badge badge-open">KAPALI</span>{{ end }}</td>
               <td>{{ if .SigningDisabled }}<span class="badge badge-high">⚠️ DEVRE DIŞI</span>{{ else }}<span class="badge badge-open">AKTİF</span>{{ end }}</td>
               <td>
-                {{ range .Notes }}<div style="font-size:0.85rem; color:var(--text-main)">{{ . }}</div>{{ end }}
+                {{ range .Notes }}<div style="font-size:0.78rem; color:var(--text-main)">{{ . }}</div>{{ end }}
               </td>
             </tr>
             {{ end }}
@@ -534,7 +530,7 @@
               <td><span class="badge badge-dns">{{ .DbType }}</span></td>
               <td><span class="code-tag">{{ if .Version }}{{ .Version }}{{ else }}-{{ end }}</span></td>
               <td>{{ if .AnonAccess }}<span class="badge badge-crit">🚨 NO AUTH UNPROTECTED</span>{{ else }}<span class="badge badge-open">Korumalı</span>{{ end }}</td>
-              <td>{{ range .Notes }}<div style="font-size:0.85rem; color:var(--crit-color)">🚨 {{ . }}</div>{{ end }}</td>
+              <td>{{ range .Notes }}<div style="font-size:0.78rem; color:var(--crit-color)">🚨 {{ . }}</div>{{ end }}</td>
             </tr>
             {{ end }}
           </tbody>
@@ -571,8 +567,8 @@
     {{ end }}
 
     <footer>
-      <p>Bu rapor <strong>SpecterRecon (Go Engine)</strong> tarafından otomatik olarak üretilmiştir.</p>
-      <p style="margin-top:0.3rem; font-size:0.75rem; color:#64748b">Yalnızca yetkilendirilmiş lab ve güvenlik değerlendirme ortamlarında geçerlidir.</p>
+      <p>Bu rapor <strong>SpecterRecon SOC Engine (Go)</strong> tarafından otomatik üretilmiştir.</p>
+      <p style="margin-top:0.2rem; font-size:0.72rem; color:#484f58">Yalnızca yetkilendirilmiş güvenlik değerlendirme ve lab ortamlarında geçerlidir.</p>
     </footer>
   </div>
 </body>

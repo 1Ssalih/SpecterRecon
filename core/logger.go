@@ -35,27 +35,27 @@ func LogAudit(action, target, details, status string) {
 
 // PrintBanner displays the ASCII banner.
 func PrintBanner(version string) {
-	bannerText := `
-  ____                  _             ____                     
+	bannerText := `  ____                  _             ____                     
  / ___| _ __   ___  ___| |_ ___ _ __ |  _ \ ___  ___ ___  _ __ 
  \___ \| '_ \ / _ \/ __| __/ _ \ '__|| |_) / _ \/ __/ _ \| '_ \ 
   ___) | |_) |  __/ (__| ||  __/ |   |  _ <  __/ (_| (_) | | | |
  |____/| .__/ \___|\___|\__\___|_|   |_| \_\___|\___\___/|_| |_|
        |_|                                                     
-   -- Fast, Modular Network Recon & Vulnerability Scanner v` + version + ` --
-                 Yetkilendirilmis Guvenlik ve Lab Test Platformu`
+   -- Universal Network & Application Security Assessment v` + version + ` --`
 
+	pterm.Println()
 	pterm.DefaultBox.WithTitle("SPECTERRECON").WithTitleTopCenter().
-		WithBoxStyle(pterm.NewStyle(pterm.FgLightCyan)).
-		Println(strings.TrimSpace(bannerText))
+		WithBoxStyle(pterm.NewStyle(pterm.FgCyan)).
+		Println(bannerText)
 }
 
 // LogStep prints step header.
 func LogStep(stepName string) {
 	pterm.Println()
-	pterm.DefaultSection.WithStyle(pterm.NewStyle(pterm.FgMagenta, pterm.Bold)).
-		Println(fmt.Sprintf("========= [ %s ] =========", strings.ToUpper(stepName)))
+	pterm.DefaultSection.WithStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
+		Println(fmt.Sprintf("▸ %s", strings.ToUpper(stepName)))
 }
+
 
 // LogInfo prints informational message.
 func LogInfo(format string, a ...interface{}) {
