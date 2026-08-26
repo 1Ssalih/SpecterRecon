@@ -1,0 +1,66 @@
+# SpecterRecon - Network Reconnaissance & Vulnerability Scanner Configuration
+
+app:
+  name: "SpecterRecon"
+  version: "1.0.0"
+  author: "Security Team"
+
+# Guardrail & Safety Defaults
+safety:
+  require_authorization: true
+  rate_limit_default: true
+  rate_limit_delay_ms: 100
+  audit_log_path: "output/audit.log"
+
+# Discovery Settings
+discovery:
+  timeout: 2.0
+  common_ping_ports: [21, 22, 23, 25, 53, 80, 110, 139, 443, 445, 1433, 3306, 3389, 5432, 8080, 8443]
+  use_arp_first: true
+
+# Port Scanner Settings
+portscan:
+  timeout: 1.5
+  concurrency: 150
+  port_presets:
+    top_20: [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 993, 995, 1723, 3306, 3389, 5900, 8080]
+    top_100: [20, 21, 22, 23, 25, 53, 80, 81, 88, 110, 111, 123, 135, 137, 138, 139, 143, 161, 179, 389, 443, 445, 465, 500, 514, 515, 520, 587, 631, 636, 873, 902, 989, 990, 993, 995, 1025, 1080, 1194, 1433, 1434, 1521, 1723, 2049, 2082, 2083, 2086, 2087, 2181, 2222, 2375, 2376, 3000, 3128, 3306, 3389, 3690, 4000, 4443, 5000, 5432, 5672, 5900, 5985, 5986, 6000, 6379, 7001, 7077, 8000, 8008, 8080, 8081, 8088, 8443, 8888, 9000, 9090, 9092, 9200, 9300, 9418, 9999, 10000, 11211, 27017, 27018, 50000]
+
+# Banner Grab & Service Detection Settings
+banner:
+  socket_timeout: 2.5
+  http_timeout: 3.0
+  probes:
+    generic: "\r\n\r\n"
+    ftp: "\r\n"
+    smtp: "EHLO recon-tool.local\r\n"
+    http: "HEAD / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Mozilla/5.0 (ReconTool/1.0)\r\nConnection: close\r\n\r\n"
+
+# CVE & Vulnerability Matcher Settings
+vuln_match:
+  nvd_api_url: "https://services.nvd.nist.gov/rest/json/cves/2.0"
+  nvd_api_key: ""
+  request_timeout: 10.0
+  max_cves_per_service: 10
+  min_cvss_score: 4.0
+
+# Directory Bruteforce Settings
+dirfuzz:
+  wordlist_path: "wordlists/common.txt"
+  sensitive_wordlist_path: "wordlists/sensitive.txt"
+  concurrency: 30
+  timeout: 4.0
+  status_codes_of_interest: [200, 204, 301, 302, 307, 308, 401, 403, 405, 500]
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 ReconTool/1.0"
+  extensions: [".php", ".html", ".js", ".json", ".txt", ".bak", ".env", ".zip"]
+
+# Output Directory
+output:
+  dir: "output"
+  hosts_file: "output/hosts.json"
+  ports_file: "output/ports.json"
+  services_file: "output/services.json"
+  vulns_file: "output/vulns.json"
+  dirs_file: "output/dirs.json"
+  findings_file: "output/findings.txt"
+  report_html_file: "output/report.html"

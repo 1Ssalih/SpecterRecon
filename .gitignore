@@ -1,0 +1,24 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Go binaries & installer files
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.msi
+*.test
+
+# Output & scan results
+output/
+modules/output/
+
+# IDE / Editor
+.vscode/
+.idea/
+.DS_Store
