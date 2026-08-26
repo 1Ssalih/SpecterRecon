@@ -187,12 +187,37 @@ Cyber-Security/
 ### 🚀 1. Hızlı Kurulum ve Derleme
 
 ```bash
-# Go bağımlılıklarını indirin
-go mod tidy
-
 # Bağımsız ikili (binary) dosyayı derleyin
 go build -o specter-recon.exe main.go
 ```
+
+---
+
+### ⚡ 2. İnteraktif Konsol Modu (ÖNERİLEN - Sıfır Tekrar!)
+
+Sürekli `.\specter-recon.exe` veya `--authorized` yazmak istemiyorsanız, uygulamayı **parametresiz çalıştırarak İnteraktif Konsol Modu'na** girebilirsiniz:
+
+```powershell
+# Parametresiz çalıştırın
+.\specter-recon.exe
+```
+
+Açılan **`specter-recon >`** istemcisinde doğrudan kısa komutlarınızı yazabilirsiniz:
+
+```text
+specter-recon > fullscan scanme.nmap.org
+specter-recon > scan scanme.nmap.org --profile web
+specter-recon > ssl scanme.nmap.org:443
+specter-recon > smb 192.168.1.10
+specter-recon > creds 192.168.1.10
+specter-recon > dirfuzz http://scanme.nmap.org
+specter-recon > exit
+```
+
+> 💡 **Kısayol İpucu (PowerShell Alias):**  
+> PowerShell'de sadece `sr` yazarak çalıştırmak için terminalinizde şu komutu çalıştırabilirsiniz:  
+> `Set-Alias sr .\specter-recon.exe`  
+> Artık terminalde sadece `sr` yazarak konsolu açabilirsiniz!
 
 ---
 
