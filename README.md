@@ -29,47 +29,101 @@
 
 </div>
 
-## 📌 Neden SpecterRecon v2.0.0?
+## 🎯 1. Projenin Amacı
 
-Geleneksel tarayıcılar genellikle tek bir alana odaklanır (sadece web, sadece port veya sadece network). **SpecterRecon v2.0.0**, her türlü sızma testinde (Web, Ağ, AD, DB, Cloud, IoT) kullanılabilecek **profil tabanlı modüler boru hattı (pipeline) mimarisine** sahiptir:
+Geleneksel güvenlik tarayıcıları genellikle yalnızca tek bir ortama odaklanır (Nmap gibi sadece ağ/port tarayanlar veya Gobuster/ffuf gibi sadece web dizinlerini hedefleyenler). 
 
-1. **🌐 Web Uygulama Pentest:** Security Headers (HSTS, CSP, X-Frame-Options), CORS Misconfiguration, Tehlikeli HTTP Metodları (TRACE/PUT/DELETE), GraphQL Introspection, Cookie Security, Reflected XSS, Error-Based SQLi, Open Redirect ve Deterministik Dizin Fuzzing.
-2. **🏢 Ağ & Altyapı Pentest:** ICMP/TCP Host Keşfi, Goroutine Port Taraması, Banner Grabbing, FTP Anonymous Login & Write Access, SMTP Open Relay & VRFY User Enum, UDP 161 SNMP Community String Brute-Force, SSH Zayıf Algoritma Analizi, NFS Export Denetimi.
-3. **🖥️ Active Directory / Windows Pentest:** SMB Null Session (anonim erişim), SMBv1 (EternalBlue/MS17-010 riski), SMB Signing (NTLM Relay riski), NetBIOS Query, Anonymous LDAP Bind, Active Directory Domain & Root DSE Naming Context Sorgusu.
-4. **🗄️ Veritabanı Pentest:** Redis NO AUTH Unprotected Access, MongoDB Unprotected Access, Memcached Anonymous Access, PostgreSQL Trust Authentication, MySQL Handshake, MSSQL & Elasticsearch denetimi.
-5. **🐳 Cloud & DevOps Pentest:** Docker Engine API (2375/2376) Unauthenticated Access, Kubernetes API Server (6443/8080) Anonymous Access, etcd (2379/2380) Key Exposure, Consul (8500), Prometheus Metrics (9090), Grafana (3000).
-6. **🔑 Default Credential Pentest:** FTP, SSH, HTTP Basic Auth, MySQL ve Redis için güvenli varsayılan kimlik bilgisi (default creds) tespiti.
-7. **🏭 IoT / OT Pentest:** Modbus TCP (502 PLC), RTSP Kamera (554 Video Stream), VNC Uzaktan Masaüstü (5900 RFB Şifresiz Erişim).
-8. **🔒 SSL/TLS Audit:** Sertifika son kullanma tarihi, self-signed sertifika, zayıf protokol (SSLv3, TLS 1.0, TLS 1.1) ve zayıf cipher tespiti.
+**SpecterRecon'un temel amacı:**
+- Keşiften zafiyet tespitine ve raporlamaya kadar olan **tüm sızma testi (pentest) süreçlerini tek bir çatı altında otomatikleştirmektir**.
+- **Python veya harici runtime/bağımlılık karmaşasına son vererek** saf Go (Golang) dili ile **tek bir bağımsız çalıştırılabilir binary (`specter-recon.exe`)** üretmektir.
+- Her test türünde (Web, Ağ, Windows/AD, Veritabanı, Cloud/DevOps, IoT/OT, SSL/TLS) **farklı araçlar arasında geçiş yapma zorunluluğunu ortadan kaldırmak**, bulunan tüm verileri otomatik olarak bir sonraki modüle aktaran **modüler bir pipeline mimarisi** sunmaktır.
+- Sonuçları hem terminalde anlık olarak canlı tablolarla göstermek hem **tek bir insan-okunabilir metin dosyasında (`output/summary.txt`)** toplamak hem de **görsel SOC HTML raporu (`output/report.html`)** olarak sunmaktır.
 
 ---
 
-## 🎯 Tarama Profilleri (`--profile`)
+## 🧰 2. Kullanılan Teknolojiler (Tech Stack)
 
-SpecterRecon, hedefe ve test türüne uygun profil ile çalıştırılabilir:
+SpecterRecon, maksimum performans, düşük bellek kullanımı ve yüksek erişilebilirlik için Go ekosisteminin en güçlü bileşenleriyle inşa edilmiştir:
 
-```bash
-# 🌐 Sadece Web Pentest
-.\specter-recon.exe scan target.com --profile web --authorized
+| Bileşen | Teknoloji / Kütüphane | Açıklama |
+|---|---|---|
+| **Çekirdek Dili** | `Go (Golang) 1.21+` | Yüksek derleme hızı, düşük bellek ayak izi, sıfır runtime bağımlılığı ve cross-platform tek binary desteği. |
+| **Eşzamanlılık (Concurrency)** | `Goroutines` + `Worker Pools` + `sync.WaitGroup` | Non-blocking asenkron ağ soket bağlantıları ile binlerce portu ve isteği paralel işleme. |
+| **CLI & Komut Motoru** | `github.com/spf13/cobra` | Tip güvenli CLI flag yönetimi, alt komut mimarisi (`scan`, `fullscan`, `ssl`, `smb`, `creds`, `dns`, `report`). |
+| **Zengin Terminal Arayüzü** | `github.com/pterm/pterm` | Renkli loglar, kutulu canlı tablolar, ilerleme durumları ve konsol çıktısı. |
+| **Zafiyet Veritabanı** | `NVD REST API v2` + Offline Cache | NIST NVD API üzerinden resmi CVSS v3.1 puanı, zafiyet açıklamaları ve offline SQLite/JSON önbelleği. |
+| **Veri & Yapılandırma** | `encoding/json` + `gopkg.in/yaml.v3` | Modüller arası veri iletimi için katı JSON modelleri ve `service_wordlist_map.yaml`. |
+| **Raporlama Motoru** | Standart `html/template` | XSS korumalı, responsive, karanlık temalı SOC güvenlik dashboard'u (`output/report.html`). |
 
-# 🏢 Sadece Ağ Altyapı Pentest (FTP, SMB, SMTP, SNMP, SSH)
-.\specter-recon.exe scan 192.168.1.0/24 --profile network --authorized
+---
 
-# 🖥️ Active Directory / Windows Ortamı Pentest (SMB + LDAP)
-.\specter-recon.exe scan 192.168.1.10 --profile ad --authorized
+## ⚙️ 3. Çalışma Şekli (Execution Workflow)
 
-# 🗄️ Veritabanı Güvenlik Denetimi (Redis, Mongo, Postgres, MySQL)
-.\specter-recon.exe scan 192.168.1.10 --profile database --authorized
+SpecterRecon, hedef girildiğinde **otomatik veri aktarımı yapan 6 temel boru hattı adımında** çalışır:
 
-# 🔒 SSL/TLS Sertifika & Protokol Audit
-.\specter-recon.exe scan example.com --profile ssl --authorized
+1. **📡 Adım 0 — DNS & Subdomain Keşfi:** Target bir domain ise (`example.com`) A/AAAA kayıtları çözümlenir ve opsiyonel Goroutine brute-force ile subdomainler keşfedilir. IP/CIDR ise bu adım otomatik atlanır.
+2. **🔍 Adım 1 — Canlı Host Keşfi (Discovery):** ARP tablosu, ICMP ping ve TCP SYN/ping probları ile ağdaki canlı makine IP'leri tespit edilir.
+3. **🔌 Adım 2 — Eşzamanlı Port Taraması:** Seçilen port aralığında (`top-20`, `top-100`, `top-1000`, `1-65535`) Goroutine Worker Pool mimarisi ile TCP connect taraması yürütülür.
+4. **🏷️ Adım 3 — Banner Grabbing & Servis Tespiti:** Açık portlarda HTTP header analizi, TLS handshaking ve Raw Socket probları ile çalışan servis adı ve versiyonu (`Apache 2.4.49`, `OpenSSH 8.9p1`, `Redis`, `SMBv1` vb.) çıkarılır.
+5. **🛡️ Adım 4 — CVE & Zafiyet Eşleştirmesi:** Tespit edilen servis ve versiyonlar NVD API v2 veritabanında taranarak resmi **CVSS v3.1 skoru** ve açıklamalara dönüştürülür.
+6. **🚀 Adım 5 — Profil Tabana Dayalı Güvenlik Modülleri:** Seçilen profile göre (`web`, `network`, `ad`, `database`, `ssl`, `cloud`, `full`) ilgili derinlemesine kontrol modülleri yürütülür.
+7. **📊 Adım 6 — Konsolide Raporlama:** Elde edilen tüm bulgular aynı anda terminale basılır, `output/summary.txt` dosyasına yazılır ve `output/report.html` SOC raporuna dönüştürülür.
 
-# 🐳 Cloud & DevOps Container Denetimi (Docker, K8s, etcd)
-.\specter-recon.exe scan 192.168.1.10 --profile cloud --authorized
+---
 
-# 🚀 HEPSİ (Eksiksiz Tam Pentest Taraması)
-.\specter-recon.exe fullscan 192.168.1.10 --authorized
+## 🏗️ 4. Proje Mimarisi ve Veri Akışı (Data Flow)
+
+SpecterRecon, modüllerin bir önceki modülün JSON çıktısını otomatik girdi olarak kullandığı **Lineer Pipeline (Boru Hattı)** mimarisiyle tasarlanmıştır:
+
+```mermaid
+graph TD
+    A[Hedef: Domain / IP / CIDR] -->|Domain ise| B(Modül 0: ip_list.json)
+    B -->|Host Keşfi| C(Modül 1: hosts.json)
+    A -->|Doğrudan IP/CIDR ise| C
+    C -->|Goroutine Port Scan| D(Modül 2: ports.json)
+    D -->|Banner Grab & Regex| E(Modül 3: services.json)
+    E -->|NVD REST API| F(Modül 4: vulns.json)
+    
+    E --> G{Tarama Profili --profile}
+    G -->|web / full| H1[Web Audit + DirFuzz dirs.json]
+    G -->|network / full| H2[SSL + FTP + SMB + SMTP + SNMP + SSH]
+    G -->|ad / full| H3[SMB Null Session + LDAP Anonymous Bind]
+    G -->|database / full| H4[Redis + Mongo + Postgres + MySQL DB Audit]
+    G -->|cloud / full| H5[Docker API + K8s + etcd + Consul]
+    G -->|creds / full| H6[Default Credentials Testing]
+    
+    B --> R[Rapor Motoru]
+    C --> R
+    D --> R
+    E --> R
+    F --> R
+    H1 --> R
+    H2 --> R
+    H3 --> R
+    H4 --> R
+    H5 --> R
+    H6 --> R
+    
+    R --> OUT1[📄 output/summary.txt - Konsolide Özet]
+    R --> OUT2[📊 output/report.html - İnteraktif SOC Raporu]
+    R --> OUT3[📜 output/audit.log - Zaman Damgalı Denetim Kütüğü]
 ```
+
+---
+
+## 📋 5. Tarama Profilleri ve Çalışma Planı (`--profile`)
+
+SpecterRecon, ihtiyaca göre hedefe özel modülleri tetikleyen 7 farklı **çalışma profili** sunar:
+
+| Profil | Amacı | Çalıştırılan Modüller | Örnek Komut |
+|---|---|---|---|
+| `web` | Web Uygulama Pentest | HTTP Security Headers, CORS, Dangerous Methods, GraphQL, Cookie Flags, Reflected XSS, Error SQLi, Web Fuzzing | `specter-recon scan target.com --profile web --authorized` |
+| `network` | Ağ Altyapı Pentest | SSL Audit, FTP Anon/Write, SMB Null/Signing/v1, SMTP Relay/VRFY, SNMP Community Brute, SSH Audit | `specter-recon scan 192.168.1.0/24 --profile network --authorized` |
+| `ad` | Active Directory Pentest | SMB Null Session, SMB Signing, SMBv1, NetBIOS Query, Anonymous LDAP Bind, AD Domain Naming | `specter-recon scan dc.company.com --profile ad --authorized` |
+| `database` | Veritabanı Audit | Redis NOAUTH, MongoDB Unprotected, Memcached, Postgres Trust Auth, MySQL, MSSQL, Elasticsearch | `specter-recon scan 192.168.1.10 --profile database --authorized` |
+| `ssl` | SSL/TLS Sertifika Audit | Sertifika son kullanma tarihi, Self-signed kontrolü, SSLv3/TLS1.0/1.1 zayıf protokol tespiti, SANs | `specter-recon scan example.com --profile ssl --authorized` |
+| `cloud` | Cloud & DevOps Audit | Docker API (2375/2376), Kubernetes API Server (6443/8080), etcd (2379/2380), Consul, Prometheus, Grafana | `specter-recon scan 192.168.1.10 --profile cloud --authorized` |
+| `full` | **Eksiksiz Tam Pentest** | **Yukarıdaki tüm 130+ güvenlik kontrolü ve modülün tamamı** | `specter-recon fullscan 192.168.1.10 --authorized` |
 
 ---
 
@@ -85,10 +139,10 @@ Cyber-Security/
 ├── cmd/                     # Cobra CLI komutları
 │   ├── root.go              # Yasal izin (--authorized) kontrolü
 │   ├── scan.go              # Profil tabanlı boru hattı komutu (--profile)
-│   ├── fullscan.go          # 🆕 Tüm adımları tek komutla çalıştıran kısayol
-│   ├── ssl.go               # 🆕 SSL/TLS audit komutu
-│   ├── smb.go               # 🆕 SMB null session & signing audit komutu
-│   ├── creds.go             # 🆕 Default credential testing komutu
+│   ├── fullscan.go          # Tüm adımları tek komutla çalıştıran kısayol
+│   ├── ssl.go               # SSL/TLS audit komutu
+│   ├── smb.go               # SMB null session & signing audit komutu
+│   ├── creds.go             # Default credential testing komutu
 │   ├── dns.go               # DNS Enumeration komutu
 │   ├── discover.go          # Host keşif komutu
 │   ├── portscan.go          # Port tarama komutu
@@ -98,25 +152,25 @@ Cyber-Security/
 │   └── report.go            # Rapor üretim komutu
 │
 ├── core/                    # Çekirdek yardımcılar & Veri Modelleri
-│   ├── models.go            # 🆕 Tüm pentest modülleri için Go struct şemaları
-│   ├── storage.go           # 🆕 JSON saklama + Genişletilmiş SaveSummaryTxt
-│   └── logger.go            # 🆕 PTerm konsol tabloları (PrintSslTable, PrintSmbTable...)
+│   ├── models.go            # Tüm pentest modülleri için Go struct şemaları
+│   ├── storage.go           # JSON saklama + Genişletilmiş SaveSummaryTxt
+│   └── logger.go            # PTerm konsol tabloları (PrintSslTable, PrintSmbTable...)
 │
 └── modules/                 # Güvenlik Modülleri
-    ├── ssl_tls.go           # 🆕 SSL/TLS Sertifika & Zayıf Protokol Audit
-    ├── http_audit.go        # 🆕 HTTP Security Headers, CORS, GraphQL, Methods
-    ├── ftp_enum.go          # 🆕 FTP Anonymous Login, Write Check (MKD), FTPS
-    ├── smb.go               # 🆕 SMB Null Session, SMBv1, SMB Signing, NetBIOS Query
-    ├── ssh_audit.go         # 🆕 SSH KEXINIT Zayıf Algoritma & Banner Analizi
-    ├── db_enum.go           # 🆕 Redis NOAUTH, Mongo Unprotected, Postgres Trust Auth...
-    ├── smtp.go              # 🆕 SMTP Open Relay, VRFY User Enum, STARTTLS
-    ├── snmp.go              # 🆕 UDP 161 SNMP Community Brute & sysDescr Query
-    ├── creds.go             # 🆕 Default Credential Testing Engine
-    ├── container.go         # 🆕 Docker API, Kubernetes API, etcd, Consul, Prometheus
-    ├── ldap.go              # 🆕 Anonymous LDAP Bind & Active Directory Domain Query
-    ├── webvuln.go           # 🆕 Reflected XSS, Error-Based SQLi, Open Redirect
-    ├── nfs.go               # 🆕 NFS 2049 RPC Export & Mount Check
-    ├── iot.go               # 🆕 Modbus TCP (PLC), RTSP Camera, VNC RFB Check
+    ├── ssl_tls.go           # SSL/TLS Sertifika & Zayıf Protokol Audit
+    ├── http_audit.go        # HTTP Security Headers, CORS, GraphQL, Methods
+    ├── ftp_enum.go          # FTP Anonymous Login, Write Check (MKD), FTPS
+    ├── smb.go               # SMB Null Session, SMBv1, SMB Signing, NetBIOS Query
+    ├── ssh_audit.go         # SSH KEXINIT Zayıf Algoritma & Banner Analizi
+    ├── db_enum.go           # Redis NOAUTH, Mongo Unprotected, Postgres Trust Auth...
+    ├── smtp.go              # SMTP Open Relay, VRFY User Enum, STARTTLS
+    ├── snmp.go              # UDP 161 SNMP Community Brute & sysDescr Query
+    ├── creds.go             # Default Credential Testing Engine
+    ├── container.go         # Docker API, Kubernetes API, etcd, Consul, Prometheus
+    ├── ldap.go              # Anonymous LDAP Bind & Active Directory Domain Query
+    ├── webvuln.go           # Reflected XSS, Error-Based SQLi, Open Redirect
+    ├── nfs.go               # NFS 2049 RPC Export & Mount Check
+    ├── iot.go               # Modbus TCP (PLC), RTSP Camera, VNC RFB Check
     ├── portscan.go          # Goroutine Worker Pool Port Tarayıcısı
     ├── discovery.go         # Host Keşfi (ARP / ICMP / TCP ping)
     ├── banner.go            # Banner Grabbing & Versiyon Çıkarımı
@@ -128,19 +182,39 @@ Cyber-Security/
 
 ---
 
-## 💻 Kullanım Örnekleri
+## 💻 Kullanım Kılavuzu & Komutlar
 
-### 1. Tam Otomatik Pentest (`fullscan` veya `scan --profile full`)
+### 🚀 1. Hızlı Kurulum ve Derleme
 
 ```bash
-# Hedef IP üzerinde tüm 130+ kontrolü çalıştır
-.\specter-recon.exe fullscan 192.168.1.10 --authorized
+# Go bağımlılıklarını indirin
+go mod tidy
 
-# Domain üzerinde subdomain discovery dahil tam pentest
-.\specter-recon.exe scan example.com --profile full --subdomains --authorized
+# Bağımsız ikili (binary) dosyayı derleyin
+go build -o specter-recon.exe main.go
 ```
 
-### 2. Modülleri Tek Başına Çalıştırma
+---
+
+### 🌟 2. Otomatik Pentest Taramaları
+
+```bash
+# 🚀 Tam Kapsamlı Eksiksiz Pentest Taraması
+.\specter-recon.exe fullscan 192.168.1.10 --authorized
+
+# 🌐 Web Uygulama Taraması (Subdomain Brute-Force Dahil)
+.\specter-recon.exe scan example.com --profile web --subdomains --authorized
+
+# 🖥️ Active Directory Ortamı Taraması
+.\specter-recon.exe scan 192.168.1.10 --profile ad --authorized
+
+# 🗄️ Veritabanı ve Sunucu Taraması
+.\specter-recon.exe scan 192.168.1.10 --profile database --authorized
+```
+
+---
+
+### 🧩 3. Modülleri Tek Başına Çalıştırma
 
 ```bash
 # 🔒 SSL/TLS Sertifika ve Protokol Audit
@@ -154,13 +228,16 @@ Cyber-Security/
 
 # 📂 Web Dizin Fuzzing
 .\specter-recon.exe dirfuzz http://192.168.1.10:8080 --authorized
+
+# 📊 Mevcut JSON'lardan Rapor Üretme
+.\specter-recon.exe report -t "Lab Target" -o output/report.html
 ```
 
 ---
 
 ## 📄 `output/summary.txt` Örnek Çıktısı
 
-Her taramadan sonra otomatik oluşturulan konsolide insan-okunabilir özet:
+Her taramadan sonra otomatik oluşturulan konsolide insan-okunabilir metin özeti:
 
 ```
 === SpecterRecon Tarama Özeti ===
