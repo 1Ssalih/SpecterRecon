@@ -46,6 +46,7 @@ func LoadServiceWordlistMap(mapFile string) map[string]string {
 }
 
 // SelectWordlistForService selects the most relevant wordlist for a detected HTTP service.
+// Priority order is fixed — first match wins (deterministic, not map-random).
 func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]string, defaultWordlist string) (string, string) {
 	if defaultWordlist == "" {
 		defaultWordlist = "wordlists/common.txt"
@@ -62,14 +63,43 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 		strings.Join(svc.HTTPTechnologies, " "),
 	))
 
+	// Sabit öncelik sırası — map rastgele iterasyon sorunundan kaçınır
+	priorityOrder := []string{"wordpress", "jenkins", "apache", "nginx", "tomcat", "iis", "drupal", "joomla", "magento"}
+
+	for _, key := range priorityOrder {
+		path, ok := wordlistMap[key]
+		if !ok {
+			continue
+		}
+		if strings.Contains(haystack, key) {
+			if _, err := os.Stat(path); err == nil {
+				return path, key
+			}
+			core.LogWarning("Wordlist bulunamadı: %s (kategori: %s), varsayılana düşülüyor", path, key)
+		}
+	}
+
+	// Haritada öncelik listesinde olmayan özel keyler (YAML'dan gelebilir)
 	for key, path := range wordlistMap {
 		if key == "default" {
+			continue
+		}
+		// Öncelik listesinde zaten kontrol edilenleri atla
+		alreadyChecked := false
+		for _, pk := range priorityOrder {
+			if pk == key {
+				alreadyChecked = true
+				break
+			}
+		}
+		if alreadyChecked {
 			continue
 		}
 		if strings.Contains(haystack, strings.ToLower(key)) {
 			if _, err := os.Stat(path); err == nil {
 				return path, key
 			}
+			core.LogWarning("Wordlist bulunamadı: %s (kategori: %s), varsayılana düşülüyor", path, key)
 		}
 	}
 
@@ -77,10 +107,12 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 		if _, err := os.Stat(defPath); err == nil {
 			return defPath, "default"
 		}
+		core.LogWarning("Varsayılan wordlist bulunamadı: %s, hardcode yedek kullanılıyor", defPath)
 	}
 
 	return defaultWordlist, "common"
 }
+
 
 // LoadWordlist reads paths from wordlist file.
 func LoadWordlist(filepath string) []string {

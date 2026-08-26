@@ -16,10 +16,14 @@ var vulnCmd = &cobra.Command{
 	Short: "Servis listesi için CVE zafiyet eşleştirmesi yapar",
 	Run: func(cmd *cobra.Command, args []string) {
 		core.PrintBanner(version)
+		core.EnsureOutputDir("output")
 		services, err := core.LoadServices(vulnInputFlag)
 		if err != nil || len(services) == 0 {
 			core.LogError("Servis listesi okunamadı: %s", vulnInputFlag)
 			return
+		}
+		if len(services) > 0 {
+			verifyScopePermission(services[0].IP)
 		}
 
 		vulns, _ := modules.MatchVulnerabilities(services, "", true, vulnOutputFlag)

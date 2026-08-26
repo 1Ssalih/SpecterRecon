@@ -128,7 +128,7 @@ var OfflineCVEDatabase = []OfflineCVE{
 	{
 		Service:      "http",
 		VersionRegex: regexp.MustCompile(`8\.1\.0-dev`),
-		CVEID:        "CVE-2021-00001",
+		CVEID:        "PHP-BACKDOOR-2021", // Resmi CVE atanmamış; GitHub PoC: vulhub/php/8.1-backdoor
 		CVSSScore:    9.8,
 		Severity:     "CRITICAL",
 		Description:  "PHP 8.1.0-dev Backdoor Remote Code Execution via User-Agentt header.",
@@ -333,7 +333,12 @@ func MatchVulnerabilities(services []core.ServiceDetail, apiKey string, useOnlin
 					}
 				}
 			}
-			time.Sleep(600 * time.Millisecond)
+			// NVD rate limit: API key yoksa 5 istek/30s (~6s/istek), key varsa daha hızlı
+			if apiKey == "" {
+				time.Sleep(6 * time.Second)
+			} else {
+				time.Sleep(600 * time.Millisecond)
+			}
 		}
 	}
 

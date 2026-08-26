@@ -1,9 +1,9 @@
 <div align="center">
 
-# ⚡ SpecterRecon (v1.1.0)
+# ⚡ SpecterRecon (v1.2.0)
 ### *Next-Gen High-Performance Network Reconnaissance & Vulnerability Assessment Engine in Go*
 
-[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
 [![Concurrency](https://img.shields.io/badge/Concurrency-Goroutines%20%2B%20Worker%20Pools-00f2fe?style=for-the-badge&logo=fastapi&logoColor=black)](#)
 [![CLI Engine](https://img.shields.io/badge/CLI-Cobra%20%2B%20PTerm-9333EA?style=for-the-badge&logo=gnometerminal&logoColor=white)](#)
 [![NVD API & CVE Matcher](https://img.shields.io/badge/Vulnerabilities-NVD%20API%20%2B%20CVSS%20v3.1-ff3366?style=for-the-badge&logo=security&logoColor=white)](#)
@@ -22,7 +22,7 @@
 ```
 
 <p align="center">
-  <b>SpecterRecon</b>, siber güvenlik uzmanları, sızma testi (pentest) ekipleri ve CTF/lab araştırmacıları için geliştirilmiş; <b>DNS Enumeration, aktif ağ keşfi, Goroutine tabanlı asenkron port taraması, servis/versiyon parmak izi analizi, NVD REST API destekli CVE zafiyet eşleştirmesi, akıllı web dizin/dosya fuzzer'ı ve modern HTML SOC raporlamasını</b> tek bir bağımsız binary dosyasında birleştiren yeni nesil güvenlik tarama motorudur.
+  <b>SpecterRecon</b>, siber güvenlik uzmanları, sızma testi (pentest) ekipleri ve CTF/lab araştırmacıları için geliştirilmiş; <b>DNS Enumeration, aktif ağ keşfi, Goroutine tabanlı asenkron port taraması, servis/versiyon parmak izi analizi, NVD REST API destekli CVE zafiyet eşleştirmesi, deterministik akıllı web dizin/dosya fuzzer'ı ve modern HTML SOC raporlamasını</b> tek bir bağımsız binary dosyasında birleştiren yeni nesil güvenlik tarama motorudur.
 </p>
 
 ---
@@ -36,9 +36,9 @@ Geleneksel tarayıcılar genellikle ya yalnızca port tarar (Nmap gibi) ya da ya
 1. **📡 Otomatik DNS & Subdomain Keşfi:** Domain girildiğinde (`example.com`) otomatik A/AAAA çözümü ve opsiyonel Goroutine brute-force ile subdomain keşfi yapar; IP/CIDR girildiğinde bu adımı otomatik atlar.
 2. **⚡ Saf Go Gücü & Goroutine Eşzamanlılığı:** Go'nun hafif eşzamanlılık modeli (`Goroutines` + `Worker Pools`) ile binlerce portu ve web yolunu milisaniyeler içinde non-blocking olarak tarar.
 3. **🛡️ Otomatik CVE & Risk Skorlama:** Tanımlanan servis/versiyonları (örn: `Apache 2.4.49`, `OpenSSH 8.9p1`) NVD REST API v2 ve yerel zafiyet veritabanında arayarak **CVSS v3.1 puanlarına** göre sıralar.
-4. **🎯 Akıllı & Teknolojiye Özel Web Fuzzing:** Sadece HTTP/HTTPS portlarında çalışır; tespit edilen teknolojiye göre (`Apache`, `Jenkins`, `WordPress` vb.) `service_wordlist_map.yaml` üzerinden hedefe özel wordlist seçer ve hassas dosya uyarıları üretir.
-5. **📊 Görsel HTML SOC Raporu:** Tarama sonuçlarını karanlık temalı, responsive, filtreli ve görsel istatistik kartlarına sahip bağımsız bir HTML raporu (`output/report.html`) olarak dışa aktarır.
-6. **🔒 Güvenlik & Denetim Guardrail'leri:** Yetkisiz taramaları önlemek için izin doğrulaması (`--authorized`) ve yapılan her eylemi kaydeden denetim kütüğü (`output/audit.log`) içerir.
+4. **🎯 Deterministik Akıllı Web Fuzzing:** Sadece HTTP/HTTPS portlarında çalışır; tespit edilen teknolojiye göre (`WordPress` > `Jenkins` > `Apache` > … öncelik sırasıyla) `service_wordlist_map.yaml` üzerinden **her çalıştırmada aynı** wordlist'i seçer ve hassas dosya uyarıları üretir.
+5. **📄 Tek TXT Özet + HTML SOC Raporu:** Tarama sonuçlarını hem `output/summary.txt` (tüm bulgular tek insan-okunabilir metin dosyasında) hem de `output/report.html` (karanlık temalı, responsive, filtreli) olarak dışa aktarır.
+6. **🔒 Tutarlı Güvenlik Guardrail'leri:** Tüm komutlarda (`scan`, `portscan`, `discover`, `dns`, `dirfuzz`, `banner`, `vuln`) yetkisiz taramaları önlemek için izin doğrulaması (`--authorized`) ve denetim kütüğü (`output/audit.log`) zorunlu tutulur.
 7. **📦 Tek Bağımsız Binary:** Python veya harici runtime bağımlılığı olmadan doğrudan çalıştırılabilir (`specter-recon.exe` / `specter-recon`).
 
 ---
@@ -56,13 +56,14 @@ graph TD
     D -->|Modül 3: Banner Grab & Regex| E(services.json)
     E -->|Modül 4: NVD API + Offline Cache| F(vulns.json)
     E -->|Modül 5: Akıllı Web Fuzzer| G(dirs.json & findings.txt)
-    B --> H[HTML Rapor Motoru]
+    B --> H[HTML + TXT Rapor Motoru]
     C --> H
     D --> H
     E --> H
     F --> H
     G --> H
     H --> I[📊 output/report.html]
+    H --> J[📄 output/summary.txt]
 ```
 
 ---
@@ -71,7 +72,7 @@ graph TD
 
 | Bileşen | Teknoloji | Açıklama |
 |---|---|---|
-| **Programlama Dili** | `Go (Golang) 1.26+` | Yüksek derleme hızı, düşük bellek ayak izi ve tek ikili (binary) çıktı. |
+| **Programlama Dili** | `Go (Golang) 1.21+` | Yüksek derleme hızı, düşük bellek ayak izi ve tek ikili (binary) çıktı. |
 | **Eşzamanlılık** | `Goroutines` + `Worker Pools` + `sync.WaitGroup` | Sıfır bellek sızıntısı ile binlerce paralel ağ bağlantısı. |
 | **CLI & Arayüz** | `github.com/spf13/cobra` + `github.com/pterm/pterm` | Tip güvenli CLI argümanları, renkli kutular, canlı loglar ve tablolar. |
 | **DNS & Ağ** | Standart `net`, `context`, `crypto/tls` | Non-blocking DNS çözümleyici, TCP Connect ve SSL denetimi. |
@@ -85,7 +86,7 @@ graph TD
 ```
 Cyber-Security/
 ├── main.go                  # Uygulama ana giriş noktası
-├── go.mod                   # Go modül tanımı
+├── go.mod                   # Go modül tanımı (Go 1.21+)
 ├── go.sum                   # Go bağımlılık doğrulama hashleri
 ├── config.yaml              # Merkezi tarama ve port yapılandırması
 ├── README.md                # Kapsamlı proje dokümantasyonu
@@ -99,11 +100,11 @@ Cyber-Security/
 │   ├── banner.go            # Modül 3: Banner grabbing ve versiyon komutu
 │   ├── vuln.go              # Modül 4: CVE zafiyet analiz komutu
 │   ├── dirfuzz.go           # Modül 5: Web dizin fuzzer komutu
-│   └── report.go            # Modül 6: HTML rapor üretim komutu
+│   └── report.go            # Modül 6: HTML + TXT rapor üretim komutu
 │
 ├── core/                    # Çekirdek yardımcılar
 │   ├── models.go            # Go struct veri şemaları (DNS, Host, Port, Service, Vuln, Finding)
-│   ├── storage.go           # JSON saklama ve yükleme yardımcıları
+│   ├── storage.go           # JSON/TXT saklama, yükleme ve SaveSummaryTxt yardımcıları
 │   └── logger.go            # PTerm konsol tabloları ve audit.log kaydedici
 │
 ├── modules/                 # Güvenlik modülleri
@@ -112,15 +113,15 @@ Cyber-Security/
 │   ├── portscan.go          # Modül 2: Goroutine Worker Pool Port Tarayıcısı
 │   ├── banner.go            # Modül 3: Banner Grabbing & Versiyon Çıkarımı
 │   ├── vulnmatch.go         # Modül 4: NVD API & Offline CVE Eşleştirici
-│   ├── dirfuzz.go           # Modül 5: Akıllı Web Dizin ve Hassas Dosya Fuzzer'ı
+│   ├── dirfuzz.go           # Modül 5: Deterministik Akıllı Web Fuzzer
 │   ├── report.go            # Modül 6: HTML Rapor Üreticisi
-│   └── modules_test.go      # Go birim testleri
+│   └── modules_test.go      # Go birim testleri (7 test)
 │
 ├── templates/               # Rapor şablonları
 │   └── report.html.tmpl     # Modern karanlık temalı HTML rapor şablonu
 │
 ├── wordlists/               # Fuzzing kelime listeleri
-│   ├── service_wordlist_map.yaml # Servis ➔ Wordlist eşleştirme konfigürasyonu
+│   ├── service_wordlist_map.yaml # Servis ➔ Wordlist öncelik eşleştirme konfigürasyonu
 │   ├── subdomains.txt       # Subdomain brute-force listesi
 │   ├── apache.txt           # Apache sunucu yolları
 │   ├── wordpress.txt        # WordPress CMS yolları
@@ -136,6 +137,7 @@ Cyber-Security/
     ├── vulns.json           # CVE zafiyetleri ve CVSS puanları
     ├── dirs.json            # Web dizin bulguları (JSON)
     ├── findings.txt         # Web bulguları ve eşleşen listeler (Düz metin)
+    ├── summary.txt          # 🆕 Tüm bulgular tek insan-okunabilir özet dosyası
     ├── report.html          # İnteraktif görsel HTML raporu
     └── audit.log            # Zaman damgalı işlem denetim kütüğü
 ```
@@ -160,7 +162,7 @@ go build -o specter-recon.exe main.go
 
 ### 🌟 1. Tam Otomatik Pipeline Taraması (`scan`)
 
-Tüm adımları (DNS Enum ➔ Keşif ➔ Port Tarama ➔ Banner ➔ CVE Analizi ➔ Web Fuzzing ➔ HTML Rapor) sırasıyla yürütür:
+Tüm adımları (DNS Enum ➔ Keşif ➔ Port Tarama ➔ Banner ➔ CVE Analizi ➔ Web Fuzzing ➔ HTML Rapor + TXT Özet) sırasıyla yürütür:
 
 ```bash
 # Domain üzerinde tam tarama (Otomatik DNS çözümleme yapar)
@@ -177,13 +179,21 @@ Tüm adımları (DNS Enum ➔ Keşif ➔ Port Tarama ➔ Banner ➔ CVE Analizi 
 
 # Stealth / Sessiz Mod (İstekler arasına 200 ms gecikme koyarak)
 .\specter-recon.exe scan 192.168.1.10 -d 200 --authorized
+
+# CVE eşleştirme ve dizin fuzzing'i atlayarak hızlı tarama
+.\specter-recon.exe scan 192.168.1.10 --skip-vuln --skip-dirfuzz --authorized
+
+# Özel çıktı dizini belirterek tarama
+.\specter-recon.exe scan 192.168.1.10 -o /tmp/myscan --authorized
 ```
+
+> Tarama tamamlandığında `output/summary.txt` dosyasında tüm bulgular (hostlar, portlar, servisler, zafiyetler, web dizin bulguları) tek bir insan-okunabilir özet olarak oluşturulur.
 
 ---
 
-### 🧩 2. Modülleri Bağımsız Çalıştırma
+### 🧩 2. Modülleri Adım Adım Bağımsız Çalıştırma
 
-Herhangi bir adımı tek başına bağımsız bir araç gibi kullanabilirsiniz:
+Her modül tek başına çalışabilir ve varsayılan olarak `output/` dizinini kullanır — hiçbir ek flag belirtmeden zincir halinde çalıştırabilirsiniz:
 
 ```bash
 # 📡 0. Sadece DNS Enumeration & Subdomain Keşfi
@@ -196,26 +206,118 @@ Herhangi bir adımı tek başına bağımsız bir araç gibi kullanabilirsiniz:
 .\specter-recon.exe portscan 192.168.1.10 -p top-100 --authorized
 
 # 🏷️ 3. Açık Portlar İçin Banner & Versiyon Tespiti
-.\specter-recon.exe banner -i output/ports.json -o output/services.json
+#    (output/ports.json'u okur → output/services.json'a yazar)
+.\specter-recon.exe banner --authorized
 
 # 🛡️ 4. Servis Listesi İçin CVE/Zafiyet Eşleştirme
-.\specter-recon.exe vuln -i output/services.json -o output/vulns.json
+#    (output/services.json'u okur → output/vulns.json'a yazar)
+.\specter-recon.exe vuln --authorized
 
-# 📂 5. Web Hedefinde Dizin/Dosya Fuzzing (Akıllı Wordlist)
+# 📂 5. Web Hedefinde Dizin/Dosya Fuzzing
 .\specter-recon.exe dirfuzz http://192.168.1.10:8080 -w wordlists/common.txt --authorized
 
-# 📊 6. Mevcut JSON Verilerinden HTML Raporu Üretme
-.\specter-recon.exe report -t "Lab Target" -o output/report.html
+# 📊 6. Mevcut JSON Verilerinden HTML Raporu + summary.txt Üretme
+.\specter-recon.exe report -t "Lab Target"
+
+# 📊 6b. Farklı bir çıktı dizininden rapor üretme
+.\specter-recon.exe report -t "Lab Target" -d /tmp/myscan -o /tmp/myscan/report.html
 ```
+
+---
+
+### 📄 `output/summary.txt` Örnek Çıktısı
+
+Her `scan` veya `report` komutundan sonra otomatik oluşturulan özet dosyasının formatı:
+
+```
+=== SpecterRecon Tarama Özeti ===
+Hedef : 192.168.1.10
+Tarih : 2026-08-26 15:00:00
+Süre  : 42.50 saniye
+
+[HOSTLAR] (1)
+  + 192.168.1.10 [tcp_ping, alive]
+
+[AÇIK PORTLAR] (3)
+  + 192.168.1.10:22    ssh             [open]
+  + 192.168.1.10:80    http            [open]
+  + 192.168.1.10:443   https           [open]
+
+[SERVİSLER & VERSİYON] (3)
+  + 192.168.1.10:22  ssh         OpenSSH 8.9p1
+  + 192.168.1.10:80  http        Apache/2.4.49 [SSL]
+  + 192.168.1.10:443 https       Apache/2.4.49 [SSL]
+
+[ZAFİYETLER] (1)
+  !! [HIGH / CVSS:7.5] CVE-2021-41773 -> http (192.168.1.10:80)
+
+[WEB BULGULARI] (2)
+  + [200] http://192.168.1.10:80/admin (4321 B) [KRİTİK DOSYA]
+  + [403] http://192.168.1.10:80/.env  (0 B)
+
+=== ÖZET ===
+  Hostlar        : 1
+  Açık Portlar   : 3
+  Zafiyetler     : 1 toplam (1 kritik/yüksek)
+  Web Bulguları  : 2 toplam (1 hassas dosya)
+  Rapor          : output/report.html
+  Süre           : 42.50 saniye
+```
+
+---
+
+## 🎯 Akıllı Wordlist Seçim Sistemi
+
+Web fuzzing sırasında servis banner'ından algılanan teknolojiye göre **deterministik öncelik sırasıyla** wordlist seçilir:
+
+| Öncelik | Teknoloji | Wordlist |
+|---------|-----------|----------|
+| 1 | WordPress | `wordlists/wordpress.txt` |
+| 2 | Jenkins | `wordlists/jenkins.txt` |
+| 3 | Apache | `wordlists/apache.txt` |
+| 4+ | nginx, tomcat, iis… | Özel wordlist (YAML'dan) |
+| Varsayılan | Tanımlanamayan | `wordlists/common.txt` |
+
+Wordlist haritası `wordlists/service_wordlist_map.yaml` dosyasından özelleştirilebilir. Belirlenen wordlist bulunamazsa uyarı verilir ve varsayılana düşülür.
 
 ---
 
 ## 🧪 Testleri Çalıştırma
 
 ```bash
-# Tüm Go birim testlerini yürütme
-go test -v ./...
+# Tüm Go birim testlerini yürüt (7 test)
+go test -v ./modules/...
 ```
+
+Testler şunları kapsar:
+- `TestIsDomainName` — Domain / IP / CIDR ayrımı
+- `TestSmartWordlistSelection` — Deterministik wordlist öncelik sırası (wordpress > apache dahil)
+- `TestParseTargets` — IP ve IP aralığı ayrıştırma
+- `TestParsePortSpecs` — Port spec ayrıştırma (top-20, özel aralık)
+- `TestExtractVersionFromText` — Banner'dan versiyon çıkarımı
+- `TestMatchOfflineCVEs` — Offline CVE veritabanı eşleştirme
+- `TestReportGeneration` — HTML rapor üretme ve içerik doğrulama
+
+---
+
+## 🔄 Değişiklik Geçmişi
+
+### v1.2.0 — 2026-08-26 (Güncel)
+- 🆕 **`output/summary.txt`**: Tüm tarama bulguları (host, port, servis, CVE, web) tek okunabilir metin dosyasında toplanıyor
+- 🆕 **`report --output-dir` flag**: Rapor komutu artık farklı çıktı dizinlerini destekliyor
+- 🔧 **Deterministik wordlist seçimi**: `SelectWordlistForService()` map iterasyonu yerine sabit öncelik listesi kullanıyor
+- 🔧 **Wordlist uyarıları**: Wordlist dosyası bulunamazsa sessiz fail yerine açık uyarı veriliyor
+- 🔧 **Tutarlı guardrail**: `banner` ve `vuln` komutları artık diğer tüm komutlar gibi scope permission kontrolü yapıyor
+- 🔧 **Output dizini garantisi**: Tüm komutlar (`portscan`, `banner`, `vuln`, `dns`, `discover`, `dirfuzz`) artık `output/` dizinini otomatik oluşturuyor
+- 🔧 **NVD rate limit**: API key'siz kullanımda bekleme 600ms → 6s'ye çıkarıldı (NVD limiti: 5 istek/30s)
+- 🔧 **PHP Backdoor CVE ID**: Geçersiz `CVE-2021-00001` → `PHP-BACKDOOR-2021` olarak düzeltildi
+- 🐛 **Go 1.21 `min()` çakışması**: `cmd/scan.go`'daki özel `min()` fonksiyonu kaldırıldı, builtin kullanılıyor
+- 🧪 **Yeni test**: WordPress + Apache çakışmasında öncelik sırası doğrulama testi eklendi
+
+### v1.1.0
+- Subdomain brute-force, DNS Enumeration pipeline entegrasyonu
+- Multi-host port tarama desteği
+- PTerm tablo arayüzü iyileştirmeleri
 
 ---
 

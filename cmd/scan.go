@@ -101,8 +101,10 @@ var scanCmd = &cobra.Command{
 		openPorts, _ := modules.ScanMultipleHosts(targetIPs, parsedPorts, threadsFlag, 1500*time.Millisecond, fmt.Sprintf("%s/ports.json", outputDirFlag))
 		if len(openPorts) == 0 {
 			core.LogWarning("Hiçbir açık port tespit edilemedi. Tarama sonlandırılıyor.")
-			report := modules.BuildCompleteReport(target, dnsFindings, hosts, nil, nil, nil, nil, time.Since(startTime).Seconds())
+			earlyDuration := time.Since(startTime).Seconds()
+			report := modules.BuildCompleteReport(target, dnsFindings, hosts, nil, nil, nil, nil, earlyDuration)
 			_, _ = modules.GenerateHTMLReport(report, "", fmt.Sprintf("%s/report.html", outputDirFlag))
+			_ = core.SaveSummaryTxt(target, hosts, nil, nil, nil, nil, earlyDuration, fmt.Sprintf("%s/summary.txt", outputDirFlag))
 			core.PrintSummaryTable(report)
 			return
 		}
@@ -147,16 +149,16 @@ var scanCmd = &cobra.Command{
 		report := modules.BuildCompleteReport(target, dnsFindings, hosts, openPorts, services, vulns, findings, duration)
 		_, _ = modules.GenerateHTMLReport(report, "", fmt.Sprintf("%s/report.html", outputDirFlag))
 
+		// summary.txt — tüm bulgular tek bir dosyada + terminale de yazılır
+		summaryPath := fmt.Sprintf("%s/summary.txt", outputDirFlag)
+		if err := core.SaveSummaryTxt(target, hosts, openPorts, services, vulns, findings, duration, summaryPath); err == nil {
+			core.LogSuccess("Tarama özeti kaydedildi: %s", summaryPath)
+		}
+
 		core.PrintSummaryTable(report)
 	},
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
 
 func init() {
 	scanCmd.Flags().StringVarP(&portsFlag, "ports", "p", "top-100", "Taranacak portlar: 'top-20', 'top-100', 'top-1000', '1-1024', '80,443'")

@@ -20,6 +20,7 @@ var dnsCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
 		core.PrintBanner(version)
+		core.EnsureOutputDir("output")
 		verifyScopePermission(target)
 
 		findings, _, _ := modules.EnumerateDNS(

@@ -295,9 +295,11 @@ func PrintSummaryTable(report CompleteScanReport) {
 		{"Tespit Edilen Zafiyetler", strconv.Itoa(report.TotalVulns)},
 		{"Web Dizin Bulguları", strconv.Itoa(report.TotalFindings)},
 		{"Toplam Süre", fmt.Sprintf("%.2f saniye", report.DurationSeconds)},
+		{"Özet Dosyası (TXT)", "output/summary.txt"},
 		{"HTML Rapor Dosyası", "output/report.html"},
 	}...)
 
 	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
 		WithData(tableData).Render()
 }
+

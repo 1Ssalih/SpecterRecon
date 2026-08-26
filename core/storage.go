@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
+
 
 // EnsureOutputDir ensures that the output directory exists.
 func EnsureOutputDir(dir string) string {
@@ -173,3 +175,138 @@ func SaveFindings(findings []DirFuzzFinding, jsonPath, txtPath string) error {
 	}
 	return nil
 }
+
+// SaveSummaryTxt writes a single human-readable summary of all scan results to a .txt file.
+// Bu fonksiyon tüm bulgular (host, port, vuln, dirfuzz) için tek bir okunabilir özet üretir.
+func SaveSummaryTxt(
+	target string,
+	hosts []HostInfo,
+	ports []PortInfo,
+	services []ServiceDetail,
+	vulns []VulnerabilityInfo,
+	findings []DirFuzzFinding,
+	durationSec float64,
+	outPath string,
+) error {
+	if outPath == "" {
+		outPath = "output/summary.txt"
+	}
+	dir := filepath.Dir(outPath)
+	if dir != "" && dir != "." {
+		_ = os.MkdirAll(dir, 0755)
+	}
+
+	f, err := os.Create(outPath)
+	if err != nil {
+		return fmt.Errorf("summary.txt oluşturulamadı: %w", err)
+	}
+	defer f.Close()
+
+	w := func(format string, a ...interface{}) {
+		_, _ = fmt.Fprintf(f, format+"\n", a...)
+	}
+
+	w("=== SpecterRecon Tarama Özeti ===")
+	w("Hedef : %s", target)
+	w("Tarih : %s", time.Now().Format("2006-01-02 15:04:05"))
+	w("Süre  : %.2f saniye", durationSec)
+	w("")
+
+	// Hostlar
+	w("[HOSTLAR] (%d)", len(hosts))
+	if len(hosts) == 0 {
+		w("  (tespit edilemedi)")
+	}
+	for _, h := range hosts {
+		hostname := ""
+		if h.Hostname != "" {
+			hostname = " (" + h.Hostname + ")"
+		}
+		w("  + %s%s [%s, %s]", h.IP, hostname, h.DiscoveryMethod, h.State)
+	}
+	w("")
+
+	// Açık Portlar
+	w("[AÇIK PORTLAR] (%d)", len(ports))
+	if len(ports) == 0 {
+		w("  (tespit edilemedi)")
+	}
+	for _, p := range ports {
+		svc := p.ServiceName
+		if svc == "" {
+			svc = "unknown"
+		}
+		w("  + %s:%-5d  %-15s [%s]", p.IP, p.Port, svc, p.State)
+	}
+	w("")
+
+	// Servisler & Versiyon
+	w("[SERVİSLER & VERSİYON] (%d)", len(services))
+	if len(services) == 0 {
+		w("  (tespit edilemedi)")
+	}
+	for _, s := range services {
+		ver := s.ServiceVersion
+		if ver == "" {
+			ver = s.HTTPTitle
+		}
+		if ver == "" {
+			ver = "-"
+		}
+		ssl := ""
+		if s.SSLEnabled {
+			ssl = " [SSL]"
+		}
+		w("  + %s:%d  %-10s  %s%s", s.IP, s.Port, s.ServiceName, ver, ssl)
+	}
+	w("")
+
+	// Zafiyetler
+	w("[ZAFİYETLER] (%d)", len(vulns))
+	if len(vulns) == 0 {
+		w("  (kritik zafiyet bulunamadı)")
+	}
+	for _, v := range vulns {
+		w("  !! [%s / CVSS:%.1f] %s -> %s", v.Severity, v.CVSSScore, v.CVEID, v.AffectedService)
+	}
+	w("")
+
+	// Web Dizin Bulguları
+	w("[WEB BULGULARI] (%d)", len(findings))
+	if len(findings) == 0 {
+		w("  (dizin bulgusu yok)")
+	}
+	for _, fi := range findings {
+		tag := ""
+		if fi.IsSensitive {
+			tag = " [KRİTİK DOSYA]"
+		}
+		w("  + [%d] %s (%d B)%s", fi.StatusCode, fi.URL, fi.ContentLength, tag)
+	}
+	w("")
+
+	// Özet
+	critCount := 0
+	for _, v := range vulns {
+		if v.Severity == "CRITICAL" || v.Severity == "HIGH" {
+			critCount++
+		}
+	}
+	sensitiveCount := 0
+	for _, fi := range findings {
+		if fi.IsSensitive {
+			sensitiveCount++
+		}
+	}
+
+	w("=== ÖZET ===")
+	w("  Hostlar        : %d", len(hosts))
+	w("  Açık Portlar   : %d", len(ports))
+	w("  Zafiyetler     : %d toplam (%d kritik/yüksek)", len(vulns), critCount)
+	w("  Web Bulguları  : %d toplam (%d hassas dosya)", len(findings), sensitiveCount)
+	w("  Rapor          : output/report.html")
+	w("  Süre           : %.2f saniye", durationSec)
+
+	return nil
+}
+

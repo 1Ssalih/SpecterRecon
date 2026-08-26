@@ -48,6 +48,17 @@ func TestSmartWordlistSelection(t *testing.T) {
 	if key2 != "default" && key2 != "common" {
 		t.Errorf("Bilinmeyen servis varsayilana dusmeli, alinan: key=%s, path=%s", key2, wPath2)
 	}
+
+	// Hem apache hem wordpress iceren servis: priority sirasina gore wordpress kazanmali
+	wpApacheSvc := core.ServiceDetail{
+		ServiceName:        "http",
+		ServiceDescription: "WordPress on Apache",
+		HTTPServer:         "Apache/2.4.49",
+	}
+	wPath3, key3 := SelectWordlistForService(wpApacheSvc, wordlistMap, "../wordlists/common.txt")
+	if key3 != "wordpress" || !strings.Contains(wPath3, "wordpress.txt") {
+		t.Errorf("WordPress+Apache servisinde wordpress.txt oncelikli olmali, alinan: key=%s, path=%s", key3, wPath3)
+	}
 }
 
 func TestParseTargets(t *testing.T) {

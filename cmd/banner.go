@@ -18,10 +18,15 @@ var bannerCmd = &cobra.Command{
 	Short: "Açık portlar için banner grabbing ve versiyon tespiti yapar",
 	Run: func(cmd *cobra.Command, args []string) {
 		core.PrintBanner(version)
+		core.EnsureOutputDir("output")
 		ports, err := core.LoadPorts(bannerInputFlag)
 		if err != nil || len(ports) == 0 {
 			core.LogError("Port listesi okunamadı veya boş: %s", bannerInputFlag)
 			return
+		}
+		// Banner grabbing yetkili tarama gerektiriyor
+		if len(ports) > 0 {
+			verifyScopePermission(ports[0].IP)
 		}
 
 		services, _ := modules.GrabBannersAndServices(ports, 30, 3500*time.Millisecond, bannerOutputFlag)

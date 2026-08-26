@@ -23,6 +23,7 @@ var dirfuzzCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		url := args[0]
 		core.PrintBanner(version)
+		core.EnsureOutputDir("output")
 		verifyScopePermission(url)
 
 		words := modules.LoadWordlist(dfWordlistFlag)

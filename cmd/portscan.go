@@ -21,6 +21,7 @@ var portscanCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
 		core.PrintBanner(version)
+		core.EnsureOutputDir("output")
 		verifyScopePermission(target)
 
 		ports := modules.ParsePortSpecs(psPortsFlag)
