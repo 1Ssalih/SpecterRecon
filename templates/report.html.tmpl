@@ -457,7 +457,118 @@
           </tbody>
         </table>
       </div>
+    <!-- Extended Pentest Module Findings -->
+    {{ if .SslFindings }}
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>🔒</span> SSL / TLS Sertifika & Protokol Audit</div>
+        <span class="section-badge">{{ len .SslFindings }} Bulgular</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>IP & Port</th><th>Sertifika Konusu</th><th>Son Kullanma</th><th>Kalan Gün</th><th>Açıklama & Riskler</th></tr>
+          </thead>
+          <tbody>
+            {{ range .SslFindings }}
+            <tr>
+              <td><strong>{{ .IP }}:{{ .Port }}</strong></td>
+              <td>{{ .Subject }}</td>
+              <td><span class="code-tag">{{ .ExpiryDate }}</span></td>
+              <td>{{ if .IsExpired }}<span class="badge badge-crit">SÜRESİ DOLMUŞ</span>{{ else }}<span class="badge badge-open">{{ .DaysUntilExpiry }} Gün</span>{{ end }}</td>
+              <td>
+                {{ range .Notes }}<div style="font-size:0.85rem; color:var(--med-color)">⚠️ {{ . }}</div>{{ end }}
+              </td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
     </div>
+    {{ end }}
+
+    {{ if .SmbFindings }}
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>🖥️</span> SMB / NetBIOS Denetimi</div>
+        <span class="section-badge">{{ len .SmbFindings }} Bulgular</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>IP & Port</th><th>NetBIOS / Domain</th><th>Null Session</th><th>SMB Signing</th><th>Paylaşımlar / Detay</th></tr>
+          </thead>
+          <tbody>
+            {{ range .SmbFindings }}
+            <tr>
+              <td><strong>{{ .IP }}:{{ .Port }}</strong></td>
+              <td>{{ .NetbiosName }} ({{ .Domain }})</td>
+              <td>{{ if .NullSession }}<span class="badge badge-crit">⚠️ EVET</span>{{ else }}<span class="badge badge-open">KAPALI</span>{{ end }}</td>
+              <td>{{ if .SigningDisabled }}<span class="badge badge-high">⚠️ DEVRE DIŞI</span>{{ else }}<span class="badge badge-open">AKTİF</span>{{ end }}</td>
+              <td>
+                {{ range .Notes }}<div style="font-size:0.85rem; color:var(--text-main)">{{ . }}</div>{{ end }}
+              </td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{ end }}
+
+    {{ if .DbFindings }}
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>🗄️</span> Veritabanı Güvenlik Denetimi</div>
+        <span class="section-badge">{{ len .DbFindings }} Bulgular</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>IP & Port</th><th>DB Tipi</th><th>Versiyon</th><th>Kimlik Doğrulama</th><th>Detay & Risk</th></tr>
+          </thead>
+          <tbody>
+            {{ range .DbFindings }}
+            <tr>
+              <td><strong>{{ .IP }}:{{ .Port }}</strong></td>
+              <td><span class="badge badge-dns">{{ .DbType }}</span></td>
+              <td><span class="code-tag">{{ if .Version }}{{ .Version }}{{ else }}-{{ end }}</span></td>
+              <td>{{ if .AnonAccess }}<span class="badge badge-crit">🚨 NO AUTH UNPROTECTED</span>{{ else }}<span class="badge badge-open">Korumalı</span>{{ end }}</td>
+              <td>{{ range .Notes }}<div style="font-size:0.85rem; color:var(--crit-color)">🚨 {{ . }}</div>{{ end }}</td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{ end }}
+
+    {{ if .CredFindings }}
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>🔑</span> Varsayılan Kimlik Bilgisi (Default Creds) Bulguları</div>
+        <span class="section-badge">{{ len .CredFindings }} Kredi</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>IP & Port</th><th>Protokol</th><th>Kullanıcı Adı</th><th>Parola</th><th>Şiddet</th></tr>
+          </thead>
+          <tbody>
+            {{ range .CredFindings }}
+            <tr>
+              <td><strong>{{ .IP }}:{{ .Port }}</strong></td>
+              <td><span class="badge badge-dns">{{ .Protocol }}</span></td>
+              <td><span class="code-tag">{{ .Username }}</span></td>
+              <td><span class="code-tag">{{ .Password }}</span></td>
+              <td><span class="badge badge-crit">🚨 CRITICAL</span></td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{ end }}
 
     <footer>
       <p>Bu rapor <strong>SpecterRecon (Go Engine)</strong> tarafından otomatik olarak üretilmiştir.</p>

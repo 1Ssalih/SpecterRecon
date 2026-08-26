@@ -31,7 +31,52 @@ var reportCmd = &cobra.Command{
 		var findings []core.DirFuzzFinding
 		_ = core.LoadJSON(filepath.Join(repOutputDir, "dirs.json"), &findings)
 
+		var sslFindings []core.SslFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "ssl_findings.json"), &sslFindings)
+
+		var httpAuditFindings []core.HttpAuditFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "http_audit.json"), &httpAuditFindings)
+
+		var smbFindings []core.SmbFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "smb_findings.json"), &smbFindings)
+
+		var ftpFindings []core.FtpFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "ftp_findings.json"), &ftpFindings)
+
+		var smtpFindings []core.SmtpFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "smtp_findings.json"), &smtpFindings)
+
+		var snmpFindings []core.SnmpFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "snmp_findings.json"), &snmpFindings)
+
+		var dbFindings []core.DbFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "db_findings.json"), &dbFindings)
+
+		var sshFindings []core.SshAuditFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "ssh_audit.json"), &sshFindings)
+
+		var credFindings []core.CredFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "creds_found.json"), &credFindings)
+
+		var containerFindings []core.ContainerFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "container_findings.json"), &containerFindings)
+
+		var ldapFindings []core.LdapFinding
+		_ = core.LoadJSON(filepath.Join(repOutputDir, "ldap_findings.json"), &ldapFindings)
+
 		report := modules.BuildCompleteReport(repTargetFlag, dnsFindings, hosts, ports, services, vulns, findings, 0.0)
+
+		report.SslFindings = sslFindings
+		report.HttpAuditFindings = httpAuditFindings
+		report.SmbFindings = smbFindings
+		report.FtpFindings = ftpFindings
+		report.SmtpFindings = smtpFindings
+		report.SnmpFindings = snmpFindings
+		report.DbFindings = dbFindings
+		report.SshAuditFindings = sshFindings
+		report.CredFindings = credFindings
+		report.ContainerFindings = containerFindings
+		report.LdapFindings = ldapFindings
 
 		// HTML raporu
 		out, err := modules.GenerateHTMLReport(report, "", repOutputFlag)
@@ -42,7 +87,10 @@ var reportCmd = &cobra.Command{
 
 		// summary.txt — tüm bulgular tek dosyada
 		summaryPath := filepath.Join(repOutputDir, "summary.txt")
-		if sErr := core.SaveSummaryTxt(repTargetFlag, hosts, ports, services, vulns, findings, 0.0, summaryPath); sErr == nil {
+		if sErr := core.SaveSummaryTxt(
+			repTargetFlag, hosts, ports, services, vulns, findings, 0.0, summaryPath,
+			sslFindings, httpAuditFindings, smbFindings, ftpFindings, smtpFindings, snmpFindings, dbFindings, sshFindings, credFindings, containerFindings, ldapFindings,
+		); sErr == nil {
 			core.LogSuccess("Tarama özeti kaydedildi: %s", summaryPath)
 		}
 
@@ -50,6 +98,7 @@ var reportCmd = &cobra.Command{
 		core.LogSuccess("Rapor başarıyla oluşturuldu: %s", out)
 	},
 }
+
 
 func init() {
 	reportCmd.Flags().StringVarP(&repTargetFlag, "target", "t", "Target Network", "Rapor hedef başlığı")
