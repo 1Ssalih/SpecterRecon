@@ -1,0 +1,14 @@
+server-status
+server-info
+icons
+cgi-bin
+manual
+.htaccess
+.htpasswd
+balancer-manager
+error
+icons/README
+phpinfo.php
+info.php
+test.php
+status

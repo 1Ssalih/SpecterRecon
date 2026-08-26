@@ -2,6 +2,14 @@ package core
 
 import "time"
 
+// DNSFinding represents a single DNS resolution or subdomain finding.
+type DNSFinding struct {
+	Hostname   string `json:"hostname"`
+	IP         string `json:"ip"`
+	RecordType string `json:"record_type"` // A, AAAA, CNAME
+	Source     string `json:"source"`      // root_resolution, subdomain_bruteforce
+}
+
 // HostInfo represents a single discovered host.
 type HostInfo struct {
 	IP              string   `json:"ip"`
@@ -64,6 +72,7 @@ type DirFuzzFinding struct {
 	Title            string   `json:"title,omitempty"`
 	ResponseTimeMs   *float64 `json:"response_time_ms,omitempty"`
 	IsSensitive      bool     `json:"is_sensitive"`
+	WordlistMatched  string   `json:"wordlist_matched,omitempty"`
 }
 
 // HostScanReport aggregates all findings for a single host.
@@ -81,6 +90,8 @@ type CompleteScanReport struct {
 	Target            string            `json:"target"`
 	ScanDate          string            `json:"scan_date"`
 	DurationSeconds   float64           `json:"duration_seconds"`
+	DNSFindings       []DNSFinding      `json:"dns_findings,omitempty"`
+	TotalDNSRecords   int               `json:"total_dns_records"`
 	Hosts             []HostScanReport  `json:"hosts"`
 	TotalHosts        int               `json:"total_hosts"`
 	TotalOpenPorts    int               `json:"total_open_ports"`

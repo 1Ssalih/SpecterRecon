@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,9 +15,72 @@ import (
 	"time"
 
 	"github.com/specter-recon/recon-tool/core"
+	"gopkg.in/yaml.v3"
 )
 
 var SensitiveKeywords = []string{".env", ".git", ".bak", "config", "backup", "sql", "id_rsa", "password", "secret", "private"}
+
+// LoadServiceWordlistMap loads the service-to-wordlist configuration map.
+func LoadServiceWordlistMap(mapFile string) map[string]string {
+	result := map[string]string{
+		"jenkins":   "wordlists/jenkins.txt",
+		"apache":    "wordlists/apache.txt",
+		"wordpress": "wordlists/wordpress.txt",
+		"default":   "wordlists/common.txt",
+	}
+
+	if mapFile == "" {
+		mapFile = "wordlists/service_wordlist_map.yaml"
+	}
+
+	data, err := os.ReadFile(mapFile)
+	if err == nil {
+		var yamlMap map[string]string
+		if err := yaml.Unmarshal(data, &yamlMap); err == nil && len(yamlMap) > 0 {
+			for k, v := range yamlMap {
+				result[strings.ToLower(k)] = v
+			}
+		}
+	}
+	return result
+}
+
+// SelectWordlistForService selects the most relevant wordlist for a detected HTTP service.
+func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]string, defaultWordlist string) (string, string) {
+	if defaultWordlist == "" {
+		defaultWordlist = "wordlists/common.txt"
+	}
+	if wordlistMap == nil {
+		wordlistMap = LoadServiceWordlistMap("")
+	}
+
+	haystack := strings.ToLower(fmt.Sprintf("%s %s %s %s %s",
+		svc.ServiceName,
+		svc.ServiceDescription,
+		svc.HTTPTitle,
+		svc.HTTPServer,
+		strings.Join(svc.HTTPTechnologies, " "),
+	))
+
+	for key, path := range wordlistMap {
+		if key == "default" {
+			continue
+		}
+		if strings.Contains(haystack, strings.ToLower(key)) {
+			if _, err := os.Stat(path); err == nil {
+				return path, key
+			}
+		}
+	}
+
+	if defPath, ok := wordlistMap["default"]; ok {
+		if _, err := os.Stat(defPath); err == nil {
+			return defPath, "default"
+		}
+	}
+
+	return defaultWordlist, "common"
+}
 
 // LoadWordlist reads paths from wordlist file.
 func LoadWordlist(filepath string) []string {
@@ -49,7 +113,7 @@ func isSensitivePath(path string) bool {
 }
 
 // FuzzSingleURL requests a single path and evaluates response.
-func FuzzSingleURL(client *http.Client, baseURL, path string, statusFilter map[int]bool, delayMs int) *core.DirFuzzFinding {
+func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFilter map[int]bool, delayMs int) *core.DirFuzzFinding {
 	if delayMs > 0 {
 		time.Sleep(time.Duration(delayMs) * time.Millisecond)
 	}
@@ -99,6 +163,7 @@ func FuzzSingleURL(client *http.Client, baseURL, path string, statusFilter map[i
 			Title:            title,
 			ResponseTimeMs:   &latency,
 			IsSensitive:      isSensitive,
+			WordlistMatched:  matchTag,
 		}
 	}
 
@@ -106,9 +171,9 @@ func FuzzSingleURL(client *http.Client, baseURL, path string, statusFilter map[i
 }
 
 // FuzzTargetService runs concurrent directory fuzzing against a single base URL.
-func FuzzTargetService(baseURL string, wordlist []string, concurrency int, delayMs int) []core.DirFuzzFinding {
-	core.LogInfo("Dizin Taraması başlatılıyor: Hedef='%s', Kelime Sayısı=%d", baseURL, len(wordlist))
-	core.LogAudit("DIR_FUZZ_START", baseURL, fmt.Sprintf("words=%d, concurrency=%d", len(wordlist), concurrency), "SUCCESS")
+func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concurrency int, delayMs int) []core.DirFuzzFinding {
+	core.LogInfo("Dizin Taraması başlatılıyor: Hedef='%s', Liste='%s', Kelime Sayısı=%d", baseURL, matchTag, len(wordlist))
+	core.LogAudit("DIR_FUZZ_START", baseURL, fmt.Sprintf("words=%d, matchTag=%s, concurrency=%d", len(wordlist), matchTag, concurrency), "SUCCESS")
 
 	if concurrency <= 0 {
 		concurrency = 25
@@ -148,7 +213,7 @@ func FuzzTargetService(baseURL string, wordlist []string, concurrency int, delay
 		go func() {
 			defer wg.Done()
 			for w := range wordChan {
-				res := FuzzSingleURL(client, baseURL, w, statusFilter, delayMs)
+				res := FuzzSingleURL(client, baseURL, w, matchTag, statusFilter, delayMs)
 				if res != nil {
 					mu.Lock()
 					findings = append(findings, *res)
@@ -173,7 +238,7 @@ func FuzzTargetService(baseURL string, wordlist []string, concurrency int, delay
 	return findings
 }
 
-// RunDirFuzzing orchestrates directory fuzzing across all open HTTP/HTTPS services.
+// RunDirFuzzing orchestrates directory fuzzing across all open HTTP/HTTPS services with smart wordlists.
 func RunDirFuzzing(services []core.ServiceDetail, wordlistPath, sensitivePath string, concurrency int, delayMs int, outputJSON, outputTxt string) ([]core.DirFuzzFinding, error) {
 	if wordlistPath == "" {
 		wordlistPath = "wordlists/common.txt"
@@ -182,17 +247,8 @@ func RunDirFuzzing(services []core.ServiceDetail, wordlistPath, sensitivePath st
 		sensitivePath = "wordlists/sensitive.txt"
 	}
 
-	words := LoadWordlist(wordlistPath)
+	wordlistMap := LoadServiceWordlistMap("")
 	sensitiveWords := LoadWordlist(sensitivePath)
-
-	seen := make(map[string]bool)
-	var combined []string
-	for _, w := range append(sensitiveWords, words...) {
-		if !seen[w] {
-			seen[w] = true
-			combined = append(combined, w)
-		}
-	}
 
 	var httpServices []core.ServiceDetail
 	for _, s := range services {
@@ -218,7 +274,23 @@ func RunDirFuzzing(services []core.ServiceDetail, wordlistPath, sensitivePath st
 		}
 		baseURL := fmt.Sprintf("%s://%s:%d", proto, svc.IP, svc.Port)
 
-		found := FuzzTargetService(baseURL, combined, concurrency, delayMs)
+		// Smart wordlist selection
+		selectedWordlistPath, matchKey := SelectWordlistForService(svc, wordlistMap, wordlistPath)
+		core.LogInfo("Servis '%s:%d' için akıllı wordlist seçildi: %s (Kategori: %s)", svc.IP, svc.Port, filepath.Base(selectedWordlistPath), matchKey)
+
+		serviceWords := LoadWordlist(selectedWordlistPath)
+
+		// Combine sensitive words with service words
+		seen := make(map[string]bool)
+		var combined []string
+		for _, w := range append(sensitiveWords, serviceWords...) {
+			if !seen[w] {
+				seen[w] = true
+				combined = append(combined, w)
+			}
+		}
+
+		found := FuzzTargetService(baseURL, combined, matchKey, concurrency, delayMs)
 		allFindings = append(allFindings, found...)
 	}
 

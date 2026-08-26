@@ -17,6 +17,7 @@ var reportCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		core.PrintBanner(version)
 
+		dnsFindings, _ := core.LoadIPList("")
 		hosts, _ := core.LoadHosts("")
 		ports, _ := core.LoadPorts("")
 		services, _ := core.LoadServices("")
@@ -25,7 +26,7 @@ var reportCmd = &cobra.Command{
 		var findings []core.DirFuzzFinding
 		_ = core.LoadJSON("output/dirs.json", &findings)
 
-		report := modules.BuildCompleteReport(repTargetFlag, hosts, ports, services, vulns, findings, 0.0)
+		report := modules.BuildCompleteReport(repTargetFlag, dnsFindings, hosts, ports, services, vulns, findings, 0.0)
 		out, err := modules.GenerateHTMLReport(report, "", repOutputFlag)
 		if err == nil {
 			core.PrintSummaryTable(report)

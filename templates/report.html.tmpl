@@ -17,6 +17,7 @@
       --text-muted: #94a3b8;
       --cyan-accent: #00f2fe;
       --blue-accent: #4facfe;
+      --purple-accent: #a855f7;
       --crit-color: #ff3366;
       --high-color: #ff9900;
       --med-color: #facc15;
@@ -72,7 +73,7 @@
     .meta-item span { color: var(--cyan-accent); font-weight: bold; }
     .metric-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 1.25rem;
       margin-bottom: 2.5rem;
     }
@@ -100,6 +101,7 @@
     .metric-card.high::before { background: var(--high-color); }
     .metric-card.ports::before { background: var(--blue-accent); }
     .metric-card.dirs::before { background: var(--success-color); }
+    .metric-card.dns::before { background: var(--purple-accent); }
     .metric-title {
       font-size: 0.85rem;
       text-transform: uppercase;
@@ -175,6 +177,7 @@
     .badge-med { background: rgba(250, 204, 21, 0.2); color: var(--med-color); border: 1px solid rgba(250, 204, 21, 0.4); }
     .badge-low { background: rgba(56, 189, 248, 0.2); color: var(--low-color); border: 1px solid rgba(56, 189, 248, 0.4); }
     .badge-open { background: rgba(16, 185, 129, 0.2); color: var(--success-color); border: 1px solid rgba(16, 185, 129, 0.4); }
+    .badge-dns { background: rgba(168, 85, 247, 0.2); color: var(--purple-accent); border: 1px solid rgba(168, 85, 247, 0.4); }
     .code-tag {
       font-family: 'JetBrains Mono', monospace;
       background: rgba(0, 0, 0, 0.4);
@@ -216,6 +219,12 @@
     </header>
 
     <div class="metric-grid">
+      {{ if gt .TotalDNSRecords 0 }}
+      <div class="metric-card dns">
+        <div class="metric-title">DNS Kayıtları / Host</div>
+        <div class="metric-value">{{ .TotalDNSRecords }}</div>
+      </div>
+      {{ end }}
       <div class="metric-card">
         <div class="metric-title">Keşfedilen Hostlar</div>
         <div class="metric-value">{{ .TotalHosts }}</div>
@@ -233,6 +242,44 @@
         <div class="metric-value">{{ .TotalFindings }}</div>
       </div>
     </div>
+
+    {{ if gt .TotalDNSRecords 0 }}
+    <!-- DNS Enumeration & Subdomains -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>📡</span> Modül 0: DNS Enumeration & Subdomainler</div>
+        <span class="section-badge">{{ len .DNSFindings }} Kayıt</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Hostname / Subdomain</th>
+              <th>IP Adresi</th>
+              <th>Kayıt Tipi</th>
+              <th>Kaynak</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{ range .DNSFindings }}
+            <tr>
+              <td><strong>{{ .Hostname }}</strong></td>
+              <td><span class="code-tag">{{ .IP }}</span></td>
+              <td><span class="badge badge-dns">{{ .RecordType }}</span></td>
+              <td>
+                {{ if eq .Source "subdomain_bruteforce" }}
+                  <span style="color:var(--cyan-accent)">🔍 Subdomain Brute-Force</span>
+                {{ else }}
+                  <span style="color:var(--text-muted)">Root DNS Çözümleme</span>
+                {{ end }}
+              </td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{ end }}
 
     <!-- Hosts & Services -->
     <div class="section-card">
@@ -350,7 +397,7 @@
     <!-- Web Findings -->
     <div class="section-card">
       <div class="section-header">
-        <div class="section-title"><span>📁</span> Web Dizin & Dosya Bulguları (Fuzzer)</div>
+        <div class="section-title"><span>📁</span> Web Dizin & Dosya Bulguları (Akıllı Fuzzer)</div>
         <span class="section-badge">{{ .TotalFindings }} Bulgu</span>
       </div>
       <div class="table-container">
@@ -361,7 +408,7 @@
               <th>Hedef URL & Yol</th>
               <th>Boyut</th>
               <th>Sayfa Başlığı / Yönlendirme</th>
-              <th>Kritiklik</th>
+              <th>Kritiklik / Eşleşme</th>
             </tr>
           </thead>
           <tbody>
@@ -391,6 +438,8 @@
                   <td>
                     {{ if .IsSensitive }}
                       <span class="badge badge-crit">⚠️ HASSAS DOSYA</span>
+                    {{ else if .WordlistMatched }}
+                      <span class="badge badge-dns">📁 {{ .WordlistMatched }}</span>
                     {{ else }}
                       <span style="color:var(--text-muted); font-size:0.8rem">Standart</span>
                     {{ end }}

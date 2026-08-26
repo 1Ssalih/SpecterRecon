@@ -15,6 +15,7 @@ import (
 // BuildCompleteReport combines individual artifacts into a unified CompleteScanReport.
 func BuildCompleteReport(
 	target string,
+	dnsFindings []core.DNSFinding,
 	hosts []core.HostInfo,
 	ports []core.PortInfo,
 	services []core.ServiceDetail,
@@ -87,6 +88,8 @@ func BuildCompleteReport(
 		Target:            target,
 		ScanDate:          time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 		DurationSeconds:   durationSeconds,
+		DNSFindings:       dnsFindings,
+		TotalDNSRecords:   len(dnsFindings),
 		Hosts:             hostReports,
 		TotalHosts:        len(hostReports),
 		TotalOpenPorts:    len(ports),

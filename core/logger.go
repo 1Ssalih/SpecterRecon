@@ -81,6 +81,31 @@ func LogError(format string, a ...interface{}) {
 	pterm.Error.Println(msg)
 }
 
+// PrintDNSTable prints DNS enumeration and subdomain findings in a clean PTerm table.
+func PrintDNSTable(findings []DNSFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	tableData := pterm.TableData{
+		{"Hostname / FQDN", "IP Adresi", "Kayıt Tipi", "Kaynak"},
+	}
+	for _, f := range findings {
+		src := "A/AAAA Çözümleme"
+		if f.Source == "subdomain_bruteforce" {
+			src = "🔍 Subdomain Brute-Force"
+		}
+		tableData = append(tableData, []string{
+			f.Hostname,
+			f.IP,
+			f.RecordType,
+			src,
+		})
+	}
+	pterm.Println()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgLightMagenta, pterm.Bold)).
+		WithData(tableData).Render()
+}
+
 // PrintHostsTable prints discovered hosts in a clean PTerm table.
 func PrintHostsTable(hosts []HostInfo) {
 	if len(hosts) == 0 {
@@ -220,7 +245,7 @@ func PrintDirFindingsTable(findings []DirFuzzFinding) {
 		return
 	}
 	tableData := pterm.TableData{
-		{"Durum Kodu", "URL / Yol", "Boyut", "Başlık / Yönlendirme", "Kritiklik"},
+		{"Durum Kodu", "URL / Yol", "Boyut", "Başlık / Yönlendirme", "Kritiklik / Eşleşme"},
 	}
 	for _, f := range findings {
 		info := f.Title
@@ -237,6 +262,8 @@ func PrintDirFindingsTable(findings []DirFuzzFinding) {
 		tag := "Standart"
 		if f.IsSensitive {
 			tag = "⚠️ HASSAS DOSYA"
+		} else if f.WordlistMatched != "" {
+			tag = fmt.Sprintf("📁 %s", f.WordlistMatched)
 		}
 
 		tableData = append(tableData, []string{
@@ -258,13 +285,19 @@ func PrintSummaryTable(report CompleteScanReport) {
 	tableData := pterm.TableData{
 		{"Metrik", "Değer"},
 		{"Taranan Hedef", report.Target},
+	}
+	if report.TotalDNSRecords > 0 {
+		tableData = append(tableData, []string{"Çözümlenen DNS Kayıtları", strconv.Itoa(report.TotalDNSRecords)})
+	}
+	tableData = append(tableData, [][]string{
 		{"Keşfedilen Hostlar", strconv.Itoa(report.TotalHosts)},
 		{"Açık Portlar", strconv.Itoa(report.TotalOpenPorts)},
 		{"Tespit Edilen Zafiyetler", strconv.Itoa(report.TotalVulns)},
 		{"Web Dizin Bulguları", strconv.Itoa(report.TotalFindings)},
 		{"Toplam Süre", fmt.Sprintf("%.2f saniye", report.DurationSeconds)},
 		{"HTML Rapor Dosyası", "output/report.html"},
-	}
+	}...)
+
 	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
 		WithData(tableData).Render()
 }

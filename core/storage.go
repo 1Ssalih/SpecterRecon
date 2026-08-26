@@ -49,6 +49,24 @@ func LoadJSON(path string, target interface{}) error {
 	return json.Unmarshal(bytes, target)
 }
 
+// SaveIPList writes DNS findings to JSON (output/ip_list.json).
+func SaveIPList(findings []DNSFinding, path string) error {
+	if path == "" {
+		path = "output/ip_list.json"
+	}
+	return SaveJSON(findings, path)
+}
+
+// LoadIPList reads DNS findings from JSON.
+func LoadIPList(path string) ([]DNSFinding, error) {
+	if path == "" {
+		path = "output/ip_list.json"
+	}
+	var findings []DNSFinding
+	err := LoadJSON(path, &findings)
+	return findings, err
+}
+
 // SaveHosts writes hosts slice to JSON.
 func SaveHosts(hosts []HostInfo, path string) error {
 	if path == "" {
@@ -142,7 +160,15 @@ func SaveFindings(findings []DirFuzzFinding, jsonPath, txtPath string) error {
 		defer file.Close()
 
 		for _, item := range findings {
-			_, _ = fmt.Fprintf(file, "[%d] %s (size: %d bytes)\n", item.StatusCode, item.URL, item.ContentLength)
+			matched := ""
+			if item.WordlistMatched != "" {
+				matched = fmt.Sprintf(" [Match: %s]", item.WordlistMatched)
+			}
+			sensitive := ""
+			if item.IsSensitive {
+				sensitive = " [CRITICAL SENSITIVE]"
+			}
+			_, _ = fmt.Fprintf(file, "[%d] %s (size: %d bytes)%s%s\n", item.StatusCode, item.URL, item.ContentLength, matched, sensitive)
 		}
 	}
 	return nil

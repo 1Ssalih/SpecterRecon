@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"path/filepath"
+
 	"github.com/specter-recon/recon-tool/core"
 	"github.com/specter-recon/recon-tool/modules"
 	"github.com/spf13/cobra"
@@ -29,7 +31,8 @@ var dirfuzzCmd = &cobra.Command{
 			return
 		}
 
-		findings := modules.FuzzTargetService(url, words, dfThreadsFlag, dfDelayFlag)
+		matchTag := filepath.Base(dfWordlistFlag)
+		findings := modules.FuzzTargetService(url, words, matchTag, dfThreadsFlag, dfDelayFlag)
 		_ = core.SaveFindings(findings, dfJSONFlag, dfTxtFlag)
 		core.PrintDirFindingsTable(findings)
 		core.LogSuccess("Dizin taraması bitti: %d yol bulundu.", len(findings))

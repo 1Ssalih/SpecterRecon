@@ -1,0 +1,7 @@
+# SpecterRecon Servis -> Wordlist Eşleştirme Yapılandırması
+# Banner analizi sonucunda tespit edilen teknolojiye göre özel wordlist seçilir.
+
+jenkins: "wordlists/jenkins.txt"
+apache: "wordlists/apache.txt"
+wordpress: "wordlists/wordpress.txt"
+default: "wordlists/common.txt"

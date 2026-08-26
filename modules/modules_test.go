@@ -8,6 +8,48 @@ import (
 	"github.com/specter-recon/recon-tool/core"
 )
 
+func TestIsDomainName(t *testing.T) {
+	if !IsDomainName("example.com") {
+		t.Errorf("example.com domain olarak taninmali")
+	}
+	if !IsDomainName("scanme.nmap.org") {
+		t.Errorf("scanme.nmap.org domain olarak taninmali")
+	}
+	if IsDomainName("192.168.1.1") {
+		t.Errorf("192.168.1.1 IP olmali, domain degil")
+	}
+	if IsDomainName("10.0.0.0/24") {
+		t.Errorf("10.0.0.0/24 CIDR olmali, domain degil")
+	}
+}
+
+func TestSmartWordlistSelection(t *testing.T) {
+	wordlistMap := map[string]string{
+		"apache":    "../wordlists/apache.txt",
+		"jenkins":   "../wordlists/jenkins.txt",
+		"wordpress": "../wordlists/wordpress.txt",
+		"default":   "../wordlists/common.txt",
+	}
+
+	apacheSvc := core.ServiceDetail{
+		ServiceName:        "http",
+		ServiceDescription: "Apache HTTP Server 2.4.49",
+	}
+	wPath, key := SelectWordlistForService(apacheSvc, wordlistMap, "../wordlists/common.txt")
+	if key != "apache" || !strings.Contains(wPath, "apache.txt") {
+		t.Errorf("Apache servisi icin apache.txt secilmeli, alinan: key=%s, path=%s", key, wPath)
+	}
+
+	unknownSvc := core.ServiceDetail{
+		ServiceName:        "http",
+		ServiceDescription: "Unknown Custom Server",
+	}
+	wPath2, key2 := SelectWordlistForService(unknownSvc, wordlistMap, "../wordlists/common.txt")
+	if key2 != "default" && key2 != "common" {
+		t.Errorf("Bilinmeyen servis varsayilana dusmeli, alinan: key=%s, path=%s", key2, wPath2)
+	}
+}
+
 func TestParseTargets(t *testing.T) {
 	single := ParseTargets("127.0.0.1")
 	if len(single) != 1 || single[0] != "127.0.0.1" {
@@ -75,6 +117,12 @@ func TestMatchOfflineCVEs(t *testing.T) {
 
 func TestReportGeneration(t *testing.T) {
 	_ = os.MkdirAll("output/test", 0755)
+	dns := core.DNSFinding{
+		Hostname:   "test.local",
+		IP:         "127.0.0.1",
+		RecordType: "A",
+		Source:     "root_resolution",
+	}
 	host := core.NewHostInfo("127.0.0.1", "tcp_ping")
 	port := core.PortInfo{IP: "127.0.0.1", Port: 80, ServiceName: "http", State: "open"}
 	svc := core.ServiceDetail{IP: "127.0.0.1", Port: 80, ServiceName: "http", ServiceVersion: "2.4.49"}
@@ -86,12 +134,13 @@ func TestReportGeneration(t *testing.T) {
 		AffectedService: "http (127.0.0.1:80)",
 	}
 	finding := core.DirFuzzFinding{
-		URL:        "http://127.0.0.1:80/admin",
-		Path:       "/admin",
-		StatusCode: 200,
+		URL:             "http://127.0.0.1:80/admin",
+		Path:            "/admin",
+		StatusCode:      200,
+		WordlistMatched: "apache",
 	}
 
-	report := BuildCompleteReport("127.0.0.1", []core.HostInfo{host}, []core.PortInfo{port}, []core.ServiceDetail{svc}, []core.VulnerabilityInfo{vuln}, []core.DirFuzzFinding{finding}, 1.25)
+	report := BuildCompleteReport("test.local", []core.DNSFinding{dns}, []core.HostInfo{host}, []core.PortInfo{port}, []core.ServiceDetail{svc}, []core.VulnerabilityInfo{vuln}, []core.DirFuzzFinding{finding}, 1.25)
 	outPath, err := GenerateHTMLReport(report, "../templates/report.html.tmpl", "output/test/test_report.html")
 	if err != nil {
 		t.Fatalf("GenerateHTMLReport hatasi: %v", err)
@@ -102,7 +151,7 @@ func TestReportGeneration(t *testing.T) {
 		t.Fatalf("Rapor okunamadi: %v", err)
 	}
 	content := string(bytes)
-	if !strings.Contains(content, "127.0.0.1") || !strings.Contains(content, "CVE-2021-41773") || !strings.Contains(content, "/admin") {
+	if !strings.Contains(content, "test.local") || !strings.Contains(content, "CVE-2021-41773") || !strings.Contains(content, "/admin") {
 		t.Errorf("Rapor icerigi eksik: %s", content)
 	}
 }
