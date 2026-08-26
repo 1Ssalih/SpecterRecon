@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpecterRecon Raporu — {{ .Target }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0a0e17;
+      --bg-card: rgba(18, 26, 43, 0.75);
+      --bg-card-hover: rgba(26, 38, 64, 0.85);
+      --border-color: rgba(64, 93, 140, 0.3);
+      --text-main: #e2e8f0;
+      --text-muted: #94a3b8;
+      --cyan-accent: #00f2fe;
+      --blue-accent: #4facfe;
+      --crit-color: #ff3366;
+      --high-color: #ff9900;
+      --med-color: #facc15;
+      --low-color: #38bdf8;
+      --success-color: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(0, 242, 254, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(79, 172, 254, 0.06) 0px, transparent 50%);
+      color: var(--text-main);
+      font-family: 'Outfit', sans-serif;
+      line-height: 1.6;
+      padding: 2.5rem 1.5rem;
+      min-height: 100vh;
+    }
+    .container { max-width: 1300px; margin: 0 auto; }
+    header {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+    .header-title h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--cyan-accent), var(--blue-accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+    .header-title p { color: var(--text-muted); margin-top: 0.25rem; font-size: 0.95rem; }
+    .header-meta {
+      display: flex;
+      gap: 1.5rem;
+      background: rgba(10, 14, 23, 0.6);
+      padding: 0.8rem 1.4rem;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+    }
+    .meta-item span { color: var(--cyan-accent); font-weight: bold; }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .metric-card:hover { transform: translateY(-3px); border-color: var(--cyan-accent); }
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--cyan-accent);
+    }
+    .metric-card.critical::before { background: var(--crit-color); }
+    .metric-card.high::before { background: var(--high-color); }
+    .metric-card.ports::before { background: var(--blue-accent); }
+    .metric-card.dirs::before { background: var(--success-color); }
+    .metric-title {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+    .metric-value {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #ffffff;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .section-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.75rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 0.75rem;
+    }
+    .section-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .section-badge {
+      background: rgba(0, 242, 254, 0.15);
+      color: var(--cyan-accent);
+      padding: 0.2rem 0.7rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .table-container { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th {
+      text-align: left;
+      padding: 0.9rem 1rem;
+      background: rgba(10, 14, 23, 0.6);
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.8px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    td { padding: 1rem; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: middle; }
+    tr:hover td { background: var(--bg-card-hover); }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+    }
+    .badge-crit { background: rgba(255, 51, 102, 0.2); color: var(--crit-color); border: 1px solid rgba(255, 51, 102, 0.4); }
+    .badge-high { background: rgba(255, 153, 0, 0.2); color: var(--high-color); border: 1px solid rgba(255, 153, 0, 0.4); }
+    .badge-med { background: rgba(250, 204, 21, 0.2); color: var(--med-color); border: 1px solid rgba(250, 204, 21, 0.4); }
+    .badge-low { background: rgba(56, 189, 248, 0.2); color: var(--low-color); border: 1px solid rgba(56, 189, 248, 0.4); }
+    .badge-open { background: rgba(16, 185, 129, 0.2); color: var(--success-color); border: 1px solid rgba(16, 185, 129, 0.4); }
+    .code-tag {
+      font-family: 'JetBrains Mono', monospace;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      color: var(--cyan-accent);
+    }
+    .vuln-desc { color: #cbd5e1; font-size: 0.88rem; max-width: 500px; }
+    .ref-link {
+      color: var(--blue-accent);
+      text-decoration: none;
+      font-size: 0.8rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .ref-link:hover { color: var(--cyan-accent); text-decoration: underline; }
+    footer {
+      text-align: center;
+      margin-top: 3rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-title">
+        <h1>SpecterRecon Güvenlik Raporu</h1>
+        <p>Otomatik Zafiyet & Keşif Analizi Sonuçları (Go Engine)</p>
+      </div>
+      <div class="header-meta">
+        <div class="meta-item">Hedef: <span>{{ .Target }}</span></div>
+        <div class="meta-item">Tarih: <span>{{ .ScanDate }}</span></div>
+        <div class="meta-item">Süre: <span>{{ printf "%.2f" .DurationSeconds }}s</span></div>
+      </div>
+    </header>
+
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-title">Keşfedilen Hostlar</div>
+        <div class="metric-value">{{ .TotalHosts }}</div>
+      </div>
+      <div class="metric-card ports">
+        <div class="metric-title">Açık Portlar</div>
+        <div class="metric-value">{{ .TotalOpenPorts }}</div>
+      </div>
+      <div class="metric-card critical">
+        <div class="metric-title">Tespit Edilen Zafiyetler</div>
+        <div class="metric-value">{{ .TotalVulns }}</div>
+      </div>
+      <div class="metric-card dirs">
+        <div class="metric-title">Web Bulguları / Yollar</div>
+        <div class="metric-value">{{ .TotalFindings }}</div>
+      </div>
+    </div>
+
+    <!-- Hosts & Services -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>🌐</span> Keşfedilen Hostlar & Açık Servisler</div>
+        <span class="section-badge">{{ len .Hosts }} Host</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>IP & Hostname</th>
+              <th>MAC & Yöntem</th>
+              <th>Açık Port</th>
+              <th>Servis Adı</th>
+              <th>Versiyon & Başlık</th>
+              <th>Banner / Detay</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{ range .Hosts }}
+              {{ $host := .Host }}
+              {{ if .Services }}
+                {{ range .Services }}
+                <tr>
+                  <td><strong>{{ $host.IP }}</strong></td>
+                  <td><span class="code-tag">{{ $host.DiscoveryMethod }}</span></td>
+                  <td><span class="badge badge-open">{{ .Port }}/{{ .Protocol }}</span></td>
+                  <td><strong>{{ .ServiceName }}</strong></td>
+                  <td>
+                    {{ if .ServiceVersion }}
+                      <span class="code-tag">{{ .ServiceVersion }}</span>
+                    {{ else if .HTTPTitle }}
+                      <span style="color:var(--cyan-accent)">{{ .HTTPTitle }}</span>
+                    {{ else }}
+                      <span style="color:var(--text-muted)">-</span>
+                    {{ end }}
+                  </td>
+                  <td><small style="color:var(--text-muted)">{{ if .BannerRaw }}{{ .BannerRaw }}{{ else }}-{{ end }}</small></td>
+                </tr>
+                {{ end }}
+              {{ else }}
+                <tr>
+                  <td><strong>{{ $host.IP }}</strong></td>
+                  <td><span class="code-tag">{{ $host.DiscoveryMethod }}</span></td>
+                  <td colspan="4" style="color:var(--text-muted)">Açık port tespit edilmedi.</td>
+                </tr>
+              {{ end }}
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Vulnerabilities -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>🛡️</span> Tespit Edilen Zafiyetler & CVE'ler</div>
+        <span class="section-badge">{{ .TotalVulns }} Zafiyet</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>CVE ID</th>
+              <th>Şiddet (CVSS)</th>
+              <th>Etkilenen Servis</th>
+              <th>Açıklama & Risk</th>
+              <th>Öneri & Referans</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{ $vulnCount := 0 }}
+            {{ range .Hosts }}
+              {{ range .Vulnerabilities }}
+                {{ $vulnCount = 1 }}
+                <tr>
+                  <td><strong style="color: #fff; font-family:'JetBrains Mono'">{{ .CVEID }}</strong></td>
+                  <td>
+                    {{ if eq .Severity "CRITICAL" }}
+                      <span class="badge badge-crit">CRITICAL ({{ printf "%.1f" .CVSSScore }})</span>
+                    {{ else if eq .Severity "HIGH" }}
+                      <span class="badge badge-high">HIGH ({{ printf "%.1f" .CVSSScore }})</span>
+                    {{ else if eq .Severity "MEDIUM" }}
+                      <span class="badge badge-med">MEDIUM ({{ printf "%.1f" .CVSSScore }})</span>
+                    {{ else }}
+                      <span class="badge badge-low">{{ .Severity }} ({{ printf "%.1f" .CVSSScore }})</span>
+                    {{ end }}
+                  </td>
+                  <td><span class="code-tag">{{ .AffectedService }}</span></td>
+                  <td class="vuln-desc">{{ .Description }}</td>
+                  <td>
+                    {{ if .Mitigation }}
+                      <div style="margin-bottom:0.3rem; font-size:0.8rem; color:var(--success-color)"><strong>Öneri:</strong> {{ .Mitigation }}</div>
+                    {{ end }}
+                    {{ range .References }}
+                      <a href="{{ . }}" target="_blank" class="ref-link">🔗 Referans</a><br>
+                    {{ end }}
+                  </td>
+                </tr>
+              {{ end }}
+            {{ end }}
+            {{ if eq .TotalVulns 0 }}
+              <tr>
+                <td colspan="5" style="text-align:center; color:var(--success-color); padding: 2rem;">
+                  ✅ Taranan servislerde bilinen kritik CVE zafiyeti bulunamadı.
+                </td>
+              </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Web Findings -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>📁</span> Web Dizin & Dosya Bulguları (Fuzzer)</div>
+        <span class="section-badge">{{ .TotalFindings }} Bulgu</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Durum Kodu</th>
+              <th>Hedef URL & Yol</th>
+              <th>Boyut</th>
+              <th>Sayfa Başlığı / Yönlendirme</th>
+              <th>Kritiklik</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{ range .Hosts }}
+              {{ range .DirFindings }}
+                <tr>
+                  <td>
+                    {{ if eq .StatusCode 200 }}
+                      <span class="badge badge-open">200 OK</span>
+                    {{ else if or (eq .StatusCode 301) (eq .StatusCode 302) }}
+                      <span class="badge badge-high">{{ .StatusCode }} REDIR</span>
+                    {{ else }}
+                      <span class="badge badge-low">{{ .StatusCode }}</span>
+                    {{ end }}
+                  </td>
+                  <td><a href="{{ .URL }}" target="_blank" class="ref-link">{{ .URL }}</a></td>
+                  <td><span class="code-tag">{{ .ContentLength }} B</span></td>
+                  <td>
+                    {{ if .Title }}
+                      <span>{{ .Title }}</span>
+                    {{ else if .RedirectLocation }}
+                      <span style="color:var(--text-muted)">➜ {{ .RedirectLocation }}</span>
+                    {{ else }}
+                      <span style="color:var(--text-muted)">-</span>
+                    {{ end }}
+                  </td>
+                  <td>
+                    {{ if .IsSensitive }}
+                      <span class="badge badge-crit">⚠️ HASSAS DOSYA</span>
+                    {{ else }}
+                      <span style="color:var(--text-muted); font-size:0.8rem">Standart</span>
+                    {{ end }}
+                  </td>
+                </tr>
+              {{ end }}
+            {{ end }}
+            {{ if eq .TotalFindings 0 }}
+              <tr>
+                <td colspan="5" style="text-align:center; color:var(--text-muted); padding: 2rem;">
+                  Web dizin taraması yapılmadı veya ek bulgu tespit edilmedi.
+                </td>
+              </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer>
+      <p>Bu rapor <strong>SpecterRecon (Go Engine)</strong> tarafından otomatik olarak üretilmiştir.</p>
+      <p style="margin-top:0.3rem; font-size:0.75rem; color:#64748b">Yalnızca yetkilendirilmiş lab ve güvenlik değerlendirme ortamlarında geçerlidir.</p>
+    </footer>
+  </div>
+</body>
+</html>
