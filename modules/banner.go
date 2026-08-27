@@ -447,7 +447,11 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 	url := fmt.Sprintf("%s://%s:%d/", proto, ip, port)
 
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: ip},
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         ip,
+			MinVersion:         tls.VersionTLS10,
+		},
 	}
 	client := &http.Client{
 		Transport: tr,
@@ -458,7 +462,7 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 	if err != nil {
 		return HTTPProbeResult{}
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/1.0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.8.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -478,6 +482,11 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 		if clean != "" && !detectedTechMap[clean] {
 			detectedTechMap[clean] = true
 		}
+	}
+
+	// Favicon MMH3 hash detection
+	if _, favTech := DetectFaviconTech(bodyStr, url, client); favTech != "" {
+		addTech(favTech)
 	}
 
 	for k, vList := range resp.Header {

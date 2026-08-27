@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"net/http"
@@ -542,6 +543,140 @@ func TestAnalyzeServiceSSHNoHTTP(t *testing.T) {
 	}
 	if detail.VersionSource != "raw_banner" {
 		t.Errorf("VersionSource 'raw_banner' olmalı, alinan: %s", detail.VersionSource)
+	}
+}
+
+func TestSIPFalsePositiveBugFix(t *testing.T) {
+	// Simulated Microsoft-HTTPAPI / WinRM / IIS HTTP 400 response
+	httpBanner := "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html; charset=us-ascii\r\nServer: Microsoft-HTTPAPI/2.0\r\nDate: Thu, 27 Aug 2026 12:00:00 GMT\r\nConnection: close\r\nContent-Length: 311\r\n"
+	
+	spec80 := FindProbeSpecByPort(80)
+	res80 := MatchBannerAgainstRules(spec80, httpBanner)
+	if res80.ServiceName == "sip" {
+		t.Fatalf("BUG REPRODUCED: Port 80 HTTP banner SIP olarak etiketlendi!")
+	}
+
+	spec5985 := FindProbeSpecByPort(5985)
+	res5985 := MatchBannerAgainstRules(spec5985, httpBanner)
+	if res5985.ServiceName == "sip" {
+		t.Fatalf("BUG REPRODUCED: Port 5985 HTTP banner SIP olarak etiketlendi!")
+	}
+}
+
+func TestSMB2NTLMSSPChallengeParsing(t *testing.T) {
+	// Construct simulated NTLMSSP Type 2 Challenge packet:
+	// NTLMSSP signature (8 bytes) + Type 2 (4 bytes)
+	// TargetName descriptor (8 bytes: len=14, offset=56)
+	// NegotiateFlags (4 bytes)
+	// ServerChallenge (8 bytes)
+	// Reserved (8 bytes)
+	// TargetInfo descriptor (8 bytes: len=40, offset=70)
+	// Version (8 bytes at offset 48): Major=10, Minor=0, Build=17763 (0x4563), NTLMRev=15
+	
+	pkt := make([]byte, 120)
+	copy(pkt[0:], []byte{'N', 'T', 'L', 'M', 'S', 'S', 'P', 0x00}) // Signature
+	pkt[8] = 0x02                                                  // Type 2 (Challenge)
+	
+	// TargetName descriptor (Offset 56, Len 14)
+	binary.LittleEndian.PutUint16(pkt[12:14], 14)
+	binary.LittleEndian.PutUint16(pkt[14:16], 14)
+	binary.LittleEndian.PutUint32(pkt[16:20], 56)
+
+	// TargetInfo descriptor (Offset 70, Len 40)
+	binary.LittleEndian.PutUint16(pkt[40:42], 40)
+	binary.LittleEndian.PutUint16(pkt[42:44], 40)
+	binary.LittleEndian.PutUint32(pkt[44:48], 70)
+
+	// OS Version struct at offset 48:
+	pkt[48] = 10                                          // Major: 10
+	pkt[49] = 0                                           // Minor: 0
+	binary.LittleEndian.PutUint16(pkt[50:52], 17763)      // Build: 17763 (Windows Server 2019)
+	pkt[55] = 15                                          // NTLM Revision: 15
+
+	info, err := ParseNTLMSSPChallenge(pkt)
+	if err != nil {
+		t.Fatalf("ParseNTLMSSPChallenge hatası: %v", err)
+	}
+	if info.BuildNumber != 17763 {
+		t.Errorf("Beklenen Build 17763, alinan %d", info.BuildNumber)
+	}
+	if !strings.Contains(info.OSName, "Windows Server 2019") {
+		t.Errorf("Beklenen OSName 'Windows Server 2019', alinan '%s'", info.OSName)
+	}
+}
+
+func TestLDAPRootDSEResponseParsing(t *testing.T) {
+	// Construct simulated LDAP RootDSE response buffer
+	mockLDAP := []byte("0\x81\x90\x02\x01\x01d\x81\x8a\x04\x000\x81\x85" +
+		"0\x22\x04\x14defaultNamingContext1\x19\x04\x17DC=milsoft,DC=com,DC=tr" +
+		"0\x23\x04\x0bdnsHostName1\x18\x04\x162012dc1.milsoft.com.tr" +
+		"0\x24\x04\x1ddomainControllerFunctionality1\x03\x04\x017")
+
+	info, err := ParseLDAPRootDSEResponse(mockLDAP)
+	if err != nil {
+		t.Fatalf("ParseLDAPRootDSEResponse hatası: %v", err)
+	}
+	if info.DefaultNamingContext != "DC=milsoft,DC=com,DC=tr" {
+		t.Errorf("Beklenen DefaultNamingContext 'DC=milsoft,DC=com,DC=tr', alinan '%s'", info.DefaultNamingContext)
+	}
+	if info.DNSHostName != "2012dc1.milsoft.com.tr" {
+		t.Errorf("Beklenen DNSHostName '2012dc1.milsoft.com.tr', alinan '%s'", info.DNSHostName)
+	}
+	if info.DomainControllerFunctionality != 7 {
+		t.Errorf("Beklenen Functionality 7, alinan %d", info.DomainControllerFunctionality)
+	}
+
+	osDesc := FunctionalityLevelToWindowsOS(info.DomainControllerFunctionality)
+	if !strings.Contains(osDesc, "Windows Server 2016") && !strings.Contains(osDesc, "2019") {
+		t.Errorf("Beklenen OS 'Windows Server 2016 / 2019...', alinan '%s'", osDesc)
+	}
+}
+
+func TestFaviconMMH3Hash(t *testing.T) {
+	// Test Murmur3_32 standard properties
+	emptyHash := CalculateFaviconMMH3([]byte{})
+	if emptyHash != 0 {
+		t.Errorf("Boş favicon hash 0 olmalı, alinan %d", emptyHash)
+	}
+
+	mockFavicon := []byte("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+	h := CalculateFaviconMMH3(mockFavicon)
+	if h == 0 {
+		t.Errorf("Favicon MMH3 hash hesaplanamadı")
+	}
+
+	// Verify known signature mapping
+	if FaviconSignatures[116323821] != "springboot" {
+		t.Errorf("Spring Boot favicon signature eşleşmedi")
+	}
+	if FaviconSignatures[81586312] != "jenkins" {
+		t.Errorf("Jenkins favicon signature eşleşmedi")
+	}
+}
+
+func TestMSRPCProbeParsing(t *testing.T) {
+	// DCERPC Bind Ack: Version 5.0, PacketType 0x0c (Bind Ack)
+	bindAck := []byte{0x05, 0x00, 0x0c, 0x03, 0x10, 0x00, 0x00, 0x00, 0x44, 0x00}
+	res, ok := ParseMSRPCProbe(135, bindAck)
+	if !ok || res.ServiceName != "msrpc" {
+		t.Errorf("MSRPC Bind Ack tanınamadı: ok=%v, res=%+v", ok, res)
+	}
+	if !strings.Contains(res.ServiceDesc, "RPC Endpoint Mapper") {
+		t.Errorf("MSRPC ServiceDesc hatalı: %s", res.ServiceDesc)
+	}
+}
+
+func TestKerberosProbeParsing(t *testing.T) {
+	// KRB-ERROR Application 30 (0x7e) containing realm
+	krbError := []byte{0x7e, 0x30, 0x30, 0x2e, 0xa1, 0x03, 0x02, 0x01, 0x05}
+	krbError = append(krbError, []byte("MILSOFT.COM.TR")...)
+	
+	res, ok := ParseKerberosProbe(88, krbError)
+	if !ok || res.ServiceName != "kerberos" {
+		t.Errorf("Kerberos error probe tanınamadı: ok=%v, res=%+v", ok, res)
+	}
+	if res.Version != "MILSOFT.COM.TR" {
+		t.Errorf("Kerberos realm çıkarılamadı: realm=%s", res.Version)
 	}
 }
 

@@ -23,7 +23,11 @@ func AuditHTTPService(ip string, port int, isSSL bool, timeout time.Duration) co
 	targetURL := fmt.Sprintf("%s://%s:%d/", proto, ip, port)
 
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         ip,
+			MinVersion:         tls.VersionTLS10,
+		},
 	}
 	client := &http.Client{
 		Transport: tr,

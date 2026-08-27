@@ -349,7 +349,66 @@ var ProbeRegistry = []ProbeSpec{
 		},
 	},
 
-	// 10. MongoDB (Port 27017)
+	// 10. SMB / NetBIOS (Port 445, 139)
+	{
+		Name:      "microsoft-ds",
+		Ports:     []int{445, 139},
+		ReadFirst: false,
+	},
+
+	// 11. LDAP / LDAPS (Port 389, 636, 3268, 3269)
+	{
+		Name:      "ldap",
+		Ports:     []int{389, 636, 3268, 3269},
+		ReadFirst: false,
+	},
+
+	// 12. MSRPC Endpoint Mapper (Port 135)
+	{
+		Name:      "msrpc",
+		Ports:     []int{135},
+		ReadFirst: false,
+		InitialProbe: []byte{
+			0x05, 0x00, 0x0b, 0x03, 0x10, 0x00, 0x00, 0x00,
+			0x48, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+			0xb8, 0x10, 0xb8, 0x10, 0x00, 0x00, 0x00, 0x00,
+			0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+			0x08, 0x83, 0xaf, 0xe1, 0x1f, 0x5d, 0xc9, 0x11,
+			0x91, 0xa4, 0x08, 0x00, 0x2b, 0x14, 0xe0, 0x44,
+			0x03, 0x00, 0x00, 0x00,
+			0x04, 0x5d, 0x88, 0x8a, 0xeb, 0x1c, 0xc9, 0x11,
+			0x9f, 0xe8, 0x08, 0x00, 0x2b, 0x10, 0x48, 0x60,
+			0x02, 0x00, 0x00, 0x00,
+		},
+		BinaryParser: ParseMSRPCProbe,
+		MaxReads:     2,
+	},
+
+	// 13. Kerberos (Port 88)
+	{
+		Name:      "kerberos",
+		Ports:     []int{88},
+		ReadFirst: false,
+		InitialProbe: []byte{
+			0x6a, 0x81, 0x82, 0x30, 0x81, 0x7f,
+			0xa1, 0x03, 0x02, 0x01, 0x05,
+			0xa2, 0x03, 0x02, 0x01, 0x0a,
+			0xa4, 0x73, 0x30, 0x71,
+			0xa0, 0x07, 0x03, 0x05, 0x00, 0x00, 0x00, 0x00, 0x10,
+			0xa1, 0x14, 0x30, 0x12, 0xa0, 0x03, 0x02, 0x01, 0x01,
+			0xa1, 0x0b, 0x30, 0x09, 0x1b, 0x07, 'a', 'd', 'm', 'i', 'n', 'i', 's',
+			0xa2, 0x0c, 0x1b, 0x0a, 'R', 'E', 'C', 'O', 'N', '.', 'L', 'O', 'C', 'A', 'L',
+			0xa3, 0x1b, 0x30, 0x19, 0xa0, 0x03, 0x02, 0x01, 0x02,
+			0xa1, 0x12, 0x30, 0x10, 0x1b, 0x06, 'k', 'r', 'b', 't', 'g', 't', 0x1b, 0x06, 'K', 'R', 'B', 'T', 'G', 'T',
+			0xa5, 0x11, 0x18, 0x0f, '2', '0', '3', '0', '0', '1', '0', '1', '0', '0', '0', '0', '0', '0', 'Z',
+			0xa7, 0x04, 0x02, 0x02, 0x12, 0x34,
+			0xa8, 0x08, 0x30, 0x06, 0x02, 0x01, 0x12, 0x02, 0x01, 0x17,
+		},
+		BinaryParser: ParseKerberosProbe,
+		MaxReads:     2,
+	},
+
+	// 14. MongoDB (Port 27017)
 	{
 		Name:         "mongodb",
 		Ports:        []int{27017},
@@ -359,17 +418,14 @@ var ProbeRegistry = []ProbeSpec{
 		MaxReads:     2,
 	},
 
-	// 11. RDP (Port 3389)
+	// 15. RDP (Port 3389)
 	{
-		Name:         "rdp",
-		Ports:        []int{3389},
-		ReadFirst:    false,
-		InitialProbe: []byte{0x03, 0x00, 0x00, 0x13, 0x0e, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00, 0x03, 0x00, 0x00, 0x00}, // TPKT / X.224 CR
-		BinaryParser: ParseRDPProbe,
-		MaxReads:     2,
+		Name:      "rdp",
+		Ports:     []int{3389},
+		ReadFirst: false,
 	},
 
-	// 12. SIP (Port 5060)
+	// 16. SIP (Port 5060) - Strictly requires SIP/2.0
 	{
 		Name:         "sip",
 		Ports:        []int{5060},
@@ -378,12 +434,20 @@ var ProbeRegistry = []ProbeSpec{
 		MaxReads:     2,
 		MatchRules: []ProbeMatchRule{
 			{
-				Pattern:     regexp.MustCompile(`(?i)Server:\s*([\w\-./]+)`),
+				Pattern:     regexp.MustCompile(`(?i)(?:SIP/2\.0\s+\d+|OPTIONS\s+sip:).*(?:Server:\s*([\w\-./]+))`),
 				ServiceName: "sip",
 				Description: "SIP VoIP Service",
 				VersionExpr: "$1",
 				Priority:    1,
-				Confidence:  80,
+				Confidence:  85,
+			},
+			{
+				Pattern:     regexp.MustCompile(`(?i)^SIP/2\.0`),
+				ServiceName: "sip",
+				Description: "SIP Service",
+				VersionExpr: "",
+				Priority:    10,
+				Confidence:  75,
 			},
 		},
 	},
@@ -480,7 +544,6 @@ func ParsePostgreSQLProbe(port int, data []byte) (core.ProbeResult, bool) {
 	if len(data) == 0 {
 		return core.ProbeResult{}, false
 	}
-	// PostgreSQL SSLRequest response is a single byte: 'S' (SSL supported) or 'N' (SSL not supported)
 	if len(data) == 1 && (data[0] == 'S' || data[0] == 'N') {
 		sslDesc := "PostgreSQL (SSL Supported)"
 		if data[0] == 'N' {
@@ -531,6 +594,68 @@ func ParsePostgreSQLProbe(port int, data []byte) (core.ProbeResult, bool) {
 	return core.ProbeResult{}, false
 }
 
+// ParseMSRPCProbe identifies Microsoft Windows RPC Endpoint Mapper responses (DCERPC Bind Ack).
+func ParseMSRPCProbe(port int, data []byte) (core.ProbeResult, bool) {
+	if len(data) >= 3 && data[0] == 0x05 && data[1] == 0x00 && data[2] == 0x0c {
+		return core.ProbeResult{
+			ServiceName: "msrpc",
+			ServiceDesc: "Microsoft Windows RPC Endpoint Mapper",
+			Banner:      "MSRPC Endpoint Mapper (DCERPC Bind Ack)",
+			ProbeUsed:   "msrpc_bind_probe",
+			Confidence:  90,
+			Evidence: []core.VersionEvidence{
+				{
+					Source:     "msrpc_dcerpc_bind",
+					Detail:     "DCERPC Bind Ack (Version 5.0)",
+					Confidence: 90,
+				},
+			},
+			IsFinal: true,
+		}, true
+	}
+	return core.ProbeResult{}, false
+}
+
+// ParseKerberosProbe extracts Kerberos Realm names from KRB-ERROR response packets.
+func ParseKerberosProbe(port int, data []byte) (core.ProbeResult, bool) {
+	if len(data) >= 4 && data[0] == 0x7e { // KRB-ERROR tag (Application 30)
+		dataStr := string(data)
+		realm := ""
+		re := regexp.MustCompile(`[A-Z0-9\-]+(?:\.[A-Z0-9\-]+)+`)
+		for _, m := range re.FindAllString(dataStr, -1) {
+			if len(m) >= 4 && strings.Contains(m, ".") {
+				realm = m
+				break
+			}
+		}
+
+		desc := "Kerberos Key Distribution Center"
+		banner := "Kerberos Service (KRB-ERROR)"
+		if realm != "" {
+			desc = fmt.Sprintf("Kerberos KDC (Realm: %s)", realm)
+			banner = fmt.Sprintf("Kerberos KDC (Realm: %s)", realm)
+		}
+
+		return core.ProbeResult{
+			ServiceName: "kerberos",
+			ServiceDesc: desc,
+			Version:     realm,
+			Banner:      banner,
+			ProbeUsed:   "kerberos_asreq_probe",
+			Confidence:  90,
+			Evidence: []core.VersionEvidence{
+				{
+					Source:     "kerberos_asreq_error",
+					Detail:     banner,
+					Confidence: 90,
+				},
+			},
+			IsFinal: true,
+		}, true
+	}
+	return core.ProbeResult{}, false
+}
+
 // ParseMongoDBProbe parses MongoDB wire protocol responses.
 func ParseMongoDBProbe(port int, data []byte) (core.ProbeResult, bool) {
 	if len(data) < 16 {
@@ -567,21 +692,86 @@ func ParseMongoDBProbe(port int, data []byte) (core.ProbeResult, bool) {
 	return core.ProbeResult{}, false
 }
 
-// ParseRDPProbe identifies Microsoft Remote Desktop Protocol (RDP) responses.
-func ParseRDPProbe(port int, data []byte) (core.ProbeResult, bool) {
-	// TPKT packet starts with 0x03 0x00, followed by 2 bytes length, then X.224 CC (0x02 0xf0 0x80)
-	if len(data) >= 7 && data[0] == 0x03 && data[1] == 0x00 {
+// ProbeRDPService performs an X.224 negotiation request followed by TLS upgrade to extract certificate & hostname.
+func ProbeRDPService(ip string, port int, timeout time.Duration) (core.ProbeResult, bool) {
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return core.ProbeResult{}, false
+	}
+	defer conn.Close()
+
+	// TPKT + X.224 Connection Request with RDP Negotiation Request (PROTOCOL_SSL | PROTOCOL_HYBRID)
+	rdpNegReq := []byte{
+		0x03, 0x00, 0x00, 0x13, // TPKT length 19
+		0x0e,                   // X.224 length 14
+		0xe0,                   // CR
+		0x00, 0x00, 0x00, 0x01, 0x00,
+		0x01,                   // RDP_NEG_REQ
+		0x00,                   // flags
+		0x08, 0x00,             // length = 8
+		0x03, 0x00, 0x00, 0x00, // PROTOCOL_SSL (0x01) | PROTOCOL_HYBRID (0x02)
+	}
+
+	_ = conn.SetWriteDeadline(time.Now().Add(1200 * time.Millisecond))
+	if _, err := conn.Write(rdpNegReq); err != nil {
+		return core.ProbeResult{}, false
+	}
+
+	buf := make([]byte, 1024)
+	_ = conn.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
+	n, err := conn.Read(buf)
+	if err != nil || n < 7 {
+		return core.ProbeResult{}, false
+	}
+
+	if buf[0] == 0x03 && buf[1] == 0x00 {
+		var certCN, issuer, tlsVerStr string
+		tlsConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         ip,
+			MinVersion:         tls.VersionTLS10,
+		})
+		_ = tlsConn.SetDeadline(time.Now().Add(2000 * time.Millisecond))
+		if hErr := tlsConn.Handshake(); hErr == nil {
+			state := tlsConn.ConnectionState()
+			switch state.Version {
+			case tls.VersionTLS13:
+				tlsVerStr = "TLSv1.3"
+			case tls.VersionTLS12:
+				tlsVerStr = "TLSv1.2"
+			case tls.VersionTLS11:
+				tlsVerStr = "TLSv1.1"
+			case tls.VersionTLS10:
+				tlsVerStr = "TLSv1.0"
+			}
+			if len(state.PeerCertificates) > 0 {
+				cert := state.PeerCertificates[0]
+				certCN = cert.Subject.CommonName
+				issuer = cert.Issuer.CommonName
+			}
+		}
+
+		banner := "Microsoft Remote Desktop Protocol (RDP)"
+		desc := "Microsoft RDP (TLS/NLA)"
+		ver := ""
+		if certCN != "" {
+			banner = fmt.Sprintf("Microsoft RDP (Host: %s, TLS: %s)", certCN, tlsVerStr)
+			ver = certCN
+		}
+
 		return core.ProbeResult{
 			ServiceName: "rdp",
-			ServiceDesc: "Microsoft Terminal Services (RDP)",
-			Banner:      "Microsoft RDP (TPKT/X.224 Handshake)",
-			ProbeUsed:   "rdp_tpkt_probe",
-			Confidence:  85,
+			ServiceDesc: desc,
+			Version:     ver,
+			Banner:      banner,
+			ProbeUsed:   "rdp_tls_negotiate",
+			Confidence:  90,
 			Evidence: []core.VersionEvidence{
 				{
-					Source:     "rdp_tpkt_handshake",
-					Detail:     "TPKT/X.224 Handshake Accepted",
-					Confidence: 85,
+					Source:     "rdp_tls_certificate",
+					Detail:     fmt.Sprintf("Subject: %s | Issuer: %s | TLS: %s", certCN, issuer, tlsVerStr),
+					Confidence: 90,
 				},
 			},
 			IsFinal: true,
@@ -596,6 +786,9 @@ func MatchBannerAgainstRules(spec ProbeSpec, text string) core.ProbeResult {
 		return core.ProbeResult{}
 	}
 
+	// CRITICAL GUARD: If text is clearly an HTTP response, never match SIP or other protocol rules
+	isHTTPText := strings.HasPrefix(text, "HTTP/") || strings.Contains(text, "HTTP/1.") || strings.Contains(text, "HTTP/2.") || strings.Contains(text, "Microsoft-HTTPAPI") || strings.Contains(text, "<html") || strings.Contains(text, "<HTML")
+
 	type matchCandidate struct {
 		rule     ProbeMatchRule
 		version  string
@@ -606,14 +799,22 @@ func MatchBannerAgainstRules(spec ProbeSpec, text string) core.ProbeResult {
 	var allRules []ProbeMatchRule
 	allRules = append(allRules, spec.MatchRules...)
 
-	// Also append global rules
+	// Append global rules, but protect against cross-service false positives
 	for _, specItem := range ProbeRegistry {
 		if specItem.Name != spec.Name {
-			allRules = append(allRules, specItem.MatchRules...)
+			for _, r := range specItem.MatchRules {
+				if isHTTPText && r.ServiceName == "sip" {
+					continue // Skip SIP rules for HTTP text
+				}
+				allRules = append(allRules, r)
+			}
 		}
 	}
 
 	for _, rule := range allRules {
+		if isHTTPText && rule.ServiceName == "sip" {
+			continue
+		}
 		matches := rule.Pattern.FindStringSubmatch(text)
 		if len(matches) > 0 {
 			ver := ""
@@ -682,6 +883,7 @@ func ProbeTLSService(ip string, port int, timeout time.Duration) *core.SSLServic
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
 		ServerName:         ip,
+		MinVersion:         tls.VersionTLS10,
 	}
 
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, conf)
@@ -768,6 +970,26 @@ func ProbeTLSService(ip string, port int, timeout time.Duration) *core.SSLServic
 
 // GrabServiceBanner connects to a target TCP port, listens passively, probes safely, and extracts high-confidence service info.
 func GrabServiceBanner(ip string, port int, timeout time.Duration) core.ProbeResult {
+	// 1. Specialized protocol probes for ports that require tailored negotiation
+	if port == 445 || port == 139 {
+		if res, ok := ProbeSMBService(ip, port, timeout); ok && res.Confidence >= 75 {
+			return res
+		}
+	}
+
+	if port == 389 || port == 636 || port == 3268 || port == 3269 {
+		isSSL := port == 636 || port == 3269
+		if res, ok := ProbeLDAPService(ip, port, isSSL, timeout); ok && res.Confidence >= 75 {
+			return res
+		}
+	}
+
+	if port == 3389 {
+		if res, ok := ProbeRDPService(ip, port, timeout); ok && res.Confidence >= 75 {
+			return res
+		}
+	}
+
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {

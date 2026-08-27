@@ -28,6 +28,7 @@ func AuditSSLService(ip string, port int, timeout time.Duration) core.SslFinding
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, &tls.Config{
 		InsecureSkipVerify: true,
 		ServerName:         ip,
+		MinVersion:         tls.VersionTLS10,
 	})
 
 	if err != nil {
