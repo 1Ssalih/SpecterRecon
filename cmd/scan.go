@@ -9,6 +9,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// minInt returns the smaller of two integers (Go 1.19 compatibility)
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 var (
 	portsFlag        string
 	threadsFlag      int
@@ -139,7 +147,7 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 
 		// Step 3: Banner Grabbing & Service Detection
 		core.LogStep("Adım 3: Banner Grabbing & Versiyon Tespiti")
-		services, _ := modules.GrabBannersAndServices(openPorts, min(30, threadsFlag), 3500*time.Millisecond, fmt.Sprintf("%s/services.json", outputDirFlag))
+		services, _ := modules.GrabBannersAndServices(openPorts, minInt(30, threadsFlag), 3500*time.Millisecond, fmt.Sprintf("%s/services.json", outputDirFlag))
 		core.PrintServicesTable(services)
 
 		// --- GENİŞLETİLMİŞ PASİF MODÜLLER (--extended) ---
@@ -180,7 +188,7 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 				wordlistSizeFlag,
 				defaultWordlist,
 				sensitiveWordlist,
-				min(25, threadsFlag),
+				minInt(25, threadsFlag),
 				delayFlag,
 				fmt.Sprintf("%s/dirs.json", outputDirFlag),
 				fmt.Sprintf("%s/findings.txt", outputDirFlag),

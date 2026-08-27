@@ -18,6 +18,76 @@ import (
 	"github.com/specter-recon/recon-tool/core"
 )
 
+type TechnologyMatch struct {
+	Name       string
+	Confidence float64 // 0.0 - 1.0 arası güven skoru
+	Category   string  // cms, server, framework, service
+	Version    string
+}
+
+// DetectTechnologiesFromBanner analyzes banner, title, headers and returns ranked technology matches.
+func DetectTechnologiesFromBanner(svc core.ServiceDetail) []TechnologyMatch {
+	var matches []TechnologyMatch
+	
+	haystack := strings.ToLower(fmt.Sprintf("%s %s %s %s %s",
+		svc.ServiceName,
+		svc.ServiceDescription,
+		svc.HTTPTitle,
+		svc.HTTPServer,
+		strings.Join(svc.HTTPTechnologies, " "),
+	))
+	
+	technologyRules := []struct {
+		Name     string
+		Patterns []string
+		Category string
+	}{
+		{"wordpress", []string{"wp-content", "wordpress", "wp-json"}, "cms"},
+		{"jenkins", []string{"jenkins", "hudson"}, "service"},
+		{"grafana", []string{"grafana"}, "service"},
+		{"gitlab", []string{"gitlab"}, "service"},
+		{"springboot", []string{"spring", "actuator", "boot"}, "framework"},
+		{"drupal", []string{"drupal"}, "cms"},
+		{"joomla", []string{"joomla"}, "cms"},
+		{"elasticsearch", []string{"elasticsearch", "kibana"}, "service"},
+		{"swagger", []string{"swagger", "openapi"}, "service"},
+		{"apache", []string{"apache"}, "server"},
+		{"nginx", []string{"nginx"}, "server"},
+		{"iis", []string{"iis", "microsoft-iis"}, "server"},
+		{"tomcat", []string{"tomcat"}, "server"},
+	}
+	
+	for _, rule := range technologyRules {
+		matchCount := 0
+		for _, pattern := range rule.Patterns {
+			if strings.Contains(haystack, pattern) {
+				matchCount++
+			}
+		}
+		
+		if matchCount > 0 {
+			confidence := float64(matchCount) / float64(len(rule.Patterns))
+			// Boost confidence if primary service name matches
+			if strings.Contains(haystack, rule.Name) {
+				confidence = 0.9
+			}
+			
+			matches = append(matches, TechnologyMatch{
+				Name:       rule.Name,
+				Confidence: confidence,
+				Category:   rule.Category,
+			})
+		}
+	}
+	
+	// Sort by confidence descending
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Confidence > matches[j].Confidence
+	})
+	
+	return matches
+}
+
 type ServiceRegexRule struct {
 	Pattern     *regexp.Regexp
 	ServiceName string

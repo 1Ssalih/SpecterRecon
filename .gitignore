@@ -1,24 +1,23 @@
-# Python
-.venv/
-venv/
-__pycache__/
-*.pyc
-*.pyo
+```
+# Compiled and build artifacts
+*.o
+*.obj
+*.out
 
-# Go binaries & installer files
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-*.msi
-*.test
+# Dependencies
+vendor/
 
-# Output & scan results
-output/
-modules/output/
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 
-# IDE / Editor
+# Editors
 .vscode/
 .idea/
-.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*
+```

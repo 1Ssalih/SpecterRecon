@@ -88,7 +88,7 @@ func LoadServiceWordlistMap(mapFile, sizeMode string) map[string]string {
 	return result
 }
 
-// SelectWordlistForService selects the most relevant wordlist for a detected HTTP service.
+// SelectWordlistForService selects the most relevant wordlist for a detected HTTP service using advanced technology detection.
 func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]string, defaultWordlist string) (string, string) {
 	if defaultWordlist == "" {
 		defaultWordlist = "wordlists/common.txt"
@@ -97,6 +97,24 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 		wordlistMap = LoadServiceWordlistMap("", "quick")
 	}
 
+	// Yeni: Gelişmiş teknoloji tespiti kullanarak en yüksek güven skoruna sahip teknolojiyi seç
+	techMatches := DetectTechnologiesFromBanner(svc)
+	
+	if len(techMatches) > 0 {
+		// En yüksek confidence skorlu teknolojiyi kullan
+		bestMatch := techMatches[0]
+		core.LogInfo("🎯 Teknoloji Tespit Edildi: %s (Güven: %.0f%%, Kategori: %s)", 
+			bestMatch.Name, bestMatch.Confidence*100, bestMatch.Category)
+		
+		if path, ok := wordlistMap[bestMatch.Name]; ok {
+			if _, err := os.Stat(path); err == nil {
+				return path, bestMatch.Name
+			}
+			core.LogWarning("Wordlist bulunamadı: %s (kategori: %s), varsayılana düşülüyor", path, bestMatch.Name)
+		}
+	}
+
+	// Fallback: Eski string-based matching
 	haystack := strings.ToLower(fmt.Sprintf("%s %s %s %s %s",
 		svc.ServiceName,
 		svc.ServiceDescription,
