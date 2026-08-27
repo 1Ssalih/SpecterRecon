@@ -237,8 +237,16 @@ func PrintServicesTable(services []ServiceDetail) {
 			}
 		}
 
+		targetStr := fmt.Sprintf("%s:%d", s.IP, s.Port)
+		if s.Hostname != "" && s.Hostname != s.IP {
+			targetStr = fmt.Sprintf("%s (%s):%d", s.IP, s.Hostname, s.Port)
+		}
+		if s.WAFDetected && s.WAFName != "" {
+			banner = fmt.Sprintf("🛡️ WAF: %s | %s", s.WAFName, banner)
+		}
+
 		tableData = append(tableData, []string{
-			fmt.Sprintf("%s:%d", s.IP, s.Port),
+			targetStr,
 			strings.ToUpper(s.ServiceName),
 			ver,
 			banner,

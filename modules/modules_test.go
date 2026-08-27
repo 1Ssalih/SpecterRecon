@@ -382,7 +382,7 @@ func TestSensitiveKeywordsAccessDenied(t *testing.T) {
 	statusFilter := map[int]bool{200: true, 401: true, 403: true}
 	client := ts.Client()
 
-	finding := FuzzSingleURL(client, ts.URL, ".env", "sensitive", statusFilter, nil)
+	finding := FuzzSingleURL(client, ts.URL, ".env", "sensitive", statusFilter, nil, BaselineResponse{}, "")
 	if finding == nil {
 		t.Fatalf("403 Forbidden dönen .env dosyası finding olarak yakalanamadı")
 	}
@@ -404,7 +404,12 @@ func TestRateLimiterIntegration(t *testing.T) {
 	requestCount := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		w.WriteHeader(http.StatusOK)
+		if strings.HasPrefix(r.URL.Path, "/test") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
 
@@ -680,3 +685,64 @@ func TestKerberosProbeParsing(t *testing.T) {
 	}
 }
 
+func TestCatchAllBaselineDetection(t *testing.T) {
+	// Setup mock HTTP server that returns 301 (134 bytes) for any path except /real-secret-admin
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/real-secret-admin" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("<html><head><title>Admin Panel</title></head><body>Welcome Admin! Secret dashboard content here.</body></html>"))
+			return
+		}
+		// Catch-All 301 redirection
+		w.Header().Set("Location", "http://example.com/")
+		w.WriteHeader(http.StatusMovedPermanently)
+		_, _ = w.Write([]byte("<html><body>Moved permanently to root</body></html>")) // ~49 bytes
+	}))
+	defer server.Close()
+
+	wordlist := []string{
+		"env",
+		"wp-config.php",
+		"id_rsa",
+		"actuator/env",
+		"backup.sql",
+		"non-existent-1",
+		"non-existent-2",
+		"real-secret-admin",
+	}
+
+	findings := FuzzTargetService(server.URL, wordlist, "test", 5, 0)
+
+	// Catch-All filter must suppress all the non-existent 301s and only keep real-secret-admin!
+	if len(findings) != 1 {
+		t.Errorf("Beklenen sadece 1 gerçek bulgu (/real-secret-admin), alinan %d bulgu: %+v", len(findings), findings)
+	}
+	if len(findings) > 0 && findings[0].Path != "/real-secret-admin" {
+		t.Errorf("Beklenen bulgu '/real-secret-admin', alinan: %s", findings[0].Path)
+	}
+}
+
+func TestWAFDetectionAkamaiGHost(t *testing.T) {
+	// Setup mock server simulating AkamaiGHost WAF 400 Bad Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "AkamaiGHost")
+		w.Header().Set("Mime-Version", "1.0")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("<HTML><HEAD><TITLE>Bad Request</TITLE></HEAD><BODY>400 Bad Request</BODY></HTML>"))
+	}))
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	p, _ := strconv.Atoi(u.Port())
+	res := ProbeHTTPService(u.Hostname(), p, false, 2*time.Second, u.Hostname())
+
+	if !res.WAFDetected {
+		t.Errorf("AkamaiGHost WAF tespit edilemedi!")
+	}
+	if !strings.Contains(res.WAFName, "Akamai") {
+		t.Errorf("WAFName 'Akamai' içermeli, alinan: %s", res.WAFName)
+	}
+	if !strings.Contains(res.Title, "WAF Protected") {
+		t.Errorf("WAF Title hatalı, alinan: %s", res.Title)
+	}
+}

@@ -12,7 +12,7 @@ import (
 )
 
 // AuditSSLService inspects the TLS certificate and cipher suite for a single endpoint.
-func AuditSSLService(ip string, port int, timeout time.Duration) core.SslFinding {
+func AuditSSLService(ip string, port int, timeout time.Duration, hostname ...string) core.SslFinding {
 	if timeout <= 0 {
 		timeout = 4 * time.Second
 	}
@@ -24,10 +24,15 @@ func AuditSSLService(ip string, port int, timeout time.Duration) core.SslFinding
 		Severity: "INFO",
 	}
 
+	sniHost := ip
+	if len(hostname) > 0 && hostname[0] != "" {
+		sniHost = hostname[0]
+	}
+
 	// Attempt connection with TLS InsecureSkipVerify and SNI
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, &tls.Config{
 		InsecureSkipVerify: true,
-		ServerName:         ip,
+		ServerName:         sniHost,
 		MinVersion:         tls.VersionTLS10,
 	})
 
@@ -152,7 +157,7 @@ func AuditSSLMultiple(services []core.ServiceDetail, timeout time.Duration, outp
 	var findings []core.SslFinding
 
 	for _, t := range targets {
-		f := AuditSSLService(t.IP, t.Port, timeout)
+		f := AuditSSLService(t.IP, t.Port, timeout, t.Hostname)
 		findings = append(findings, f)
 		if f.IsExpired || f.IsSelfSigned || len(f.WeakProtocols) > 0 {
 			core.LogWarning("SSL/TLS Riski (%s:%d): %s", f.IP, f.Port, strings.Join(f.Notes, " | "))

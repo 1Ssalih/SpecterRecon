@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -283,8 +284,100 @@ func isSensitivePath(path string) bool {
 	return false
 }
 
-// FuzzSingleURL requests a single path and evaluates response with rate limiter support.
-func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFilter map[int]bool, limiter *rate.Limiter) *core.DirFuzzFinding {
+// BaselineResponse holds characteristics of non-existent path responses for Catch-All / Wildcard detection.
+type BaselineResponse struct {
+	IsCatchAll       bool
+	StatusCode       int
+	ContentLength    int64
+	RedirectLocation string
+	Title            string
+}
+
+// DetectBaselineResponse probes 3 random non-existent paths to detect Wildcard / Catch-All redirection or soft 404 behavior.
+func DetectBaselineResponse(client *http.Client, baseURL string, targetHost string) BaselineResponse {
+	testPaths := []string{
+		"specter-fp-check-x9y8z7-1234",
+		"non-existent-probe-a1b2c3-5678",
+		"random-garbage-check-m4n5o6-9012",
+	}
+
+	type probeResp struct {
+		statusCode int
+		length     int64
+		location   string
+		title      string
+	}
+
+	var results []probeResp
+
+	for _, p := range testPaths {
+		url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), p)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			continue
+		}
+		if targetHost != "" {
+			req.Host = targetHost
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.8.0")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 16384))
+		_ = resp.Body.Close()
+
+		var title string
+		re := regexp.MustCompile(`(?i)<title[^>]*>(.*?)</title>`)
+		matches := re.FindStringSubmatch(string(bodyBytes))
+		if len(matches) > 1 {
+			title = strings.TrimSpace(matches[1])
+		}
+
+		results = append(results, probeResp{
+			statusCode: resp.StatusCode,
+			length:     int64(len(bodyBytes)),
+			location:   resp.Header.Get("Location"),
+			title:      title,
+		})
+	}
+
+	if len(results) >= 2 {
+		first := results[0]
+		allMatch := true
+		for _, r := range results[1:] {
+			if r.statusCode != first.statusCode {
+				allMatch = false
+				break
+			}
+			diff := r.length - first.length
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff > 15 && r.location != first.location {
+				allMatch = false
+				break
+			}
+		}
+
+		if allMatch && (first.statusCode == 200 || first.statusCode == 301 || first.statusCode == 302 || first.statusCode == 307 || first.statusCode == 308 || first.statusCode == 403 || first.statusCode == 400) {
+			core.LogWarning("Catch-All / Wildcard Yanıtı Tespit Edildi: Hedef bilinmeyen tüm yollara [%d] (~%dB) dönüyor. Sahte bulgular otomatik filtrelenecektir.", first.statusCode, first.length)
+			return BaselineResponse{
+				IsCatchAll:       true,
+				StatusCode:       first.statusCode,
+				ContentLength:    first.length,
+				RedirectLocation: first.location,
+				Title:            first.title,
+			}
+		}
+	}
+
+	return BaselineResponse{}
+}
+
+// FuzzSingleURL requests a single path and evaluates response with Catch-All baseline filter and rate limiter support.
+func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFilter map[int]bool, limiter *rate.Limiter, baseline BaselineResponse, targetHost string) *core.DirFuzzFinding {
 	if limiter != nil {
 		_ = limiter.Wait(context.Background())
 	}
@@ -296,7 +389,10 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 	if err != nil {
 		return nil
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/1.0")
+	if targetHost != "" {
+		req.Host = targetHost
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.8.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -309,6 +405,7 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 	if statusFilter[resp.StatusCode] {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 16384))
 		bodyStr := string(bodyBytes)
+		contentLen := int64(len(bodyBytes))
 
 		var title string
 		if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
@@ -325,6 +422,26 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 		location := resp.Header.Get("Location")
 		isSensitive := isSensitivePath(path)
 
+		// 1. Catch-All Baseline Suppression
+		if baseline.IsCatchAll && resp.StatusCode == baseline.StatusCode {
+			diff := contentLen - baseline.ContentLength
+			if diff < 0 {
+				diff = -diff
+			}
+			// Suppress matching content size
+			if diff <= 15 {
+				if !(isSensitive && resp.StatusCode == 200 && title != baseline.Title && title != "") {
+					return nil
+				}
+			}
+			// Suppress matching redirect location
+			if (resp.StatusCode == 301 || resp.StatusCode == 302 || resp.StatusCode == 307 || resp.StatusCode == 308) && baseline.RedirectLocation != "" {
+				if location == baseline.RedirectLocation || strings.TrimRight(location, "/") == strings.TrimRight(baseline.RedirectLocation, "/") {
+					return nil
+				}
+			}
+		}
+
 		// If sensitive keyword matched and status is 401 Unauthorized or 403 Forbidden
 		if isSensitive && (resp.StatusCode == 401 || resp.StatusCode == 403) {
 			if title == "" {
@@ -338,7 +455,7 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 			URL:              url,
 			Path:             "/" + path,
 			StatusCode:       resp.StatusCode,
-			ContentLength:    int64(len(bodyBytes)),
+			ContentLength:    contentLen,
 			RedirectLocation: location,
 			Title:            title,
 			ResponseTimeMs:   &latency,
@@ -353,9 +470,14 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 
 // FuzzTargetService runs concurrent directory fuzzing against a single base URL with token bucket rate limiting.
 func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concurrency int, delayMs int) []core.DirFuzzFinding {
+	return FuzzTargetServiceWithHost(baseURL, "", wordlist, matchTag, concurrency, delayMs)
+}
+
+// FuzzTargetServiceWithHost runs directory fuzzing with explicit Host header and baseline Catch-All suppression.
+func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []string, matchTag string, concurrency int, delayMs int) []core.DirFuzzFinding {
 	totalWords := len(wordlist)
 	core.LogInfo("Dizin Taraması başlatılıyor: Hedef='%s', Liste='%s', Kelime Sayısı=%d", baseURL, matchTag, totalWords)
-	core.LogAudit("DIR_FUZZ_START", baseURL, fmt.Sprintf("words=%d, matchTag=%s, concurrency=%d", totalWords, matchTag, concurrency), "SUCCESS")
+	core.LogAudit("DIR_FUZZ_START", baseURL, fmt.Sprintf("words=%d, matchTag=%s, concurrency=%d, host=%s", totalWords, matchTag, concurrency, targetHost), "SUCCESS")
 
 	if concurrency <= 0 {
 		concurrency = 25
@@ -372,8 +494,19 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 		200: true, 204: true, 301: true, 302: true, 307: true, 308: true, 401: true, 403: true, 405: true, 500: true,
 	}
 
+	sniHost := targetHost
+	if sniHost == "" {
+		if u, err := url.Parse(baseURL); err == nil {
+			sniHost = u.Hostname()
+		}
+	}
+
 	tr := &http.Transport{
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         sniHost,
+			MinVersion:         tls.VersionTLS10,
+		},
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 50,
 	}
@@ -385,6 +518,9 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 		},
 	}
 
+	// Baseline Catch-All Probing
+	baseline := DetectBaselineResponse(client, baseURL, targetHost)
+
 	wordChan := make(chan string, totalWords)
 	for _, w := range wordlist {
 		wordChan <- w
@@ -392,11 +528,12 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 	close(wordChan)
 
 	var (
-		wg             sync.WaitGroup
-		mu             sync.Mutex
-		findings       []core.DirFuzzFinding
-		processedCount int64
-		startTime      = time.Now()
+		wg               sync.WaitGroup
+		mu               sync.Mutex
+		findings         []core.DirFuzzFinding
+		processedCount   int64
+		startTime        = time.Now()
+		sizeFrequencyMap = make(map[string]int)
 	)
 
 	for i := 0; i < concurrency; i++ {
@@ -404,10 +541,22 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 		go func() {
 			defer wg.Done()
 			for w := range wordChan {
-				res := FuzzSingleURL(client, baseURL, w, matchTag, statusFilter, limiter)
+				res := FuzzSingleURL(client, baseURL, w, matchTag, statusFilter, limiter, baseline, targetHost)
 				curr := atomic.AddInt64(&processedCount, 1)
 
 				if res != nil {
+					// Dynamic soft-404 / wildcard clustering filter:
+					// If the exact same (statusCode:size) is observed > 15 times for non-200 responses, suppress further duplicates
+					freqKey := fmt.Sprintf("%d:%d", res.StatusCode, res.ContentLength)
+					mu.Lock()
+					sizeFrequencyMap[freqKey]++
+					count := sizeFrequencyMap[freqKey]
+					mu.Unlock()
+
+					if res.StatusCode != 200 && count > 15 && !res.IsSensitive {
+						continue // Suppress repetitive wildcard flood
+					}
+
 					mu.Lock()
 					findings = append(findings, *res)
 					mu.Unlock()
@@ -527,7 +676,7 @@ func RunDirFuzzing(services []core.ServiceDetail, wordlistSizeMode string, defau
 		}
 		core.LogInfo("Servis '%s:%d' için wordlist seçildi: %s (%s, toplam %d kelime)", svc.IP, svc.Port, strings.Join(displayNames, "+"), matchKey, len(combined))
 
-		found := FuzzTargetService(baseURL, combined, matchKey, concurrency, delayMs)
+		found := FuzzTargetServiceWithHost(baseURL, svc.Hostname, combined, matchKey, concurrency, delayMs)
 		allFindings = append(allFindings, found...)
 	}
 

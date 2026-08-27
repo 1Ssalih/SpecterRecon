@@ -436,20 +436,27 @@ type HTTPProbeResult struct {
 	Technologies  []string
 	DetectedTechs []string
 	Banner        string
+	WAFDetected   bool
+	WAFName       string
 }
 
 // ProbeHTTPService checks if service is HTTP/HTTPS and extracts headers, title, and fingerprints body.
-func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HTTPProbeResult {
+func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration, hostname ...string) HTTPProbeResult {
 	proto := "http"
 	if isSSL {
 		proto = "https"
 	}
 	url := fmt.Sprintf("%s://%s:%d/", proto, ip, port)
 
+	sniHost := ip
+	if len(hostname) > 0 && hostname[0] != "" {
+		sniHost = hostname[0]
+	}
+
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
-			ServerName:         ip,
+			ServerName:         sniHost,
 			MinVersion:         tls.VersionTLS10,
 		},
 	}
@@ -461,6 +468,9 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return HTTPProbeResult{}
+	}
+	if sniHost != "" {
+		req.Host = sniHost
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.8.0")
 
@@ -619,43 +629,40 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 			if strings.Contains(genContent, "hugo") {
 				addTech("hugo")
 			}
-			if strings.Contains(genContent, "next.js") {
-				addTech("nextjs")
-			}
 		}
 	}
 
-	// 2. Specific framework & CMS body signatures
-	if strings.Contains(bodyLower, "/wp-includes/") || strings.Contains(bodyLower, "/wp-content/") || strings.Contains(bodyLower, "wp-json") {
-		addTech("wordpress")
-	}
-	if strings.Contains(bodyLower, "__next_data__") || strings.Contains(bodyLower, "/_next/static") || strings.Contains(bodyLower, "/_next/") {
+	// 2. HTML Body JS Objects & Scripts
+	if strings.Contains(bodyStr, "__NEXT_DATA__") || strings.Contains(bodyStr, "/_next/static/") {
 		addTech("nextjs")
 	}
-	if strings.Contains(bodyLower, "ng-app") || strings.Contains(bodyLower, "ng-version") || strings.Contains(bodyLower, "ng-controller") {
-		addTech("angular")
-	}
-	if strings.Contains(bodyLower, "data-reactroot") || strings.Contains(bodyLower, "__reactfiber") || strings.Contains(bodyLower, "react-dom") {
+	if strings.Contains(bodyStr, "react-root") || strings.Contains(bodyStr, "data-reactroot") || strings.Contains(bodyStr, "_reactListening") {
 		addTech("react")
 	}
-	if strings.Contains(bodyLower, "data-v-") || strings.Contains(bodyLower, "vue.js") {
+	if strings.Contains(bodyStr, "data-v-") || strings.Contains(bodyStr, "vue-router") || strings.Contains(bodyStr, "vuex") {
 		addTech("vue")
 	}
-	if strings.Contains(bodyLower, "whitelabel error page") || strings.Contains(bodyLower, "this application has no explicit mapping for /error") || strings.Contains(bodyLower, "org.springframework.boot") {
-		addTech("springboot")
+	if strings.Contains(bodyStr, "ng-app") || strings.Contains(bodyStr, "ng-controller") || strings.Contains(bodyStr, "ng-version") {
+		addTech("angular")
 	}
-	if strings.Contains(bodyLower, "csrfmiddlewaretoken") || strings.Contains(bodyLower, "django.contrib") {
-		addTech("django")
+	if strings.Contains(bodyStr, "wp-content") || strings.Contains(bodyStr, "wp-includes") {
+		addTech("wordpress")
 	}
-	if strings.Contains(bodyLower, "authenticity_token") && strings.Contains(bodyLower, "csrf-param") {
-		addTech("rails")
+	if strings.Contains(bodyStr, "/sites/default/files") || strings.Contains(bodyStr, "drupal.js") {
+		addTech("drupal")
 	}
-	if strings.Contains(bodyLower, "__viewstate") || strings.Contains(bodyLower, "__eventvalidation") {
-		addTech("aspnet")
-	}
-	if strings.Contains(bodyLower, "swagger-ui") || strings.Contains(bodyLower, "swagger.json") || strings.Contains(bodyLower, "openapi.json") || strings.Contains(bodyLower, "api-docs") {
+	if strings.Contains(bodyStr, "swagger-ui") || strings.Contains(bodyStr, "api-docs") {
 		addTech("swagger")
 		addTech("api")
+	}
+	if strings.Contains(bodyStr, "Whitelabel Error Page") || strings.Contains(bodyStr, "There was an unexpected error (type=") {
+		addTech("springboot")
+	}
+	if strings.Contains(bodyLower, "django") || strings.Contains(bodyLower, "csrfmiddlewaretoken") {
+		addTech("django")
+	}
+	if strings.Contains(bodyLower, "laravel_session") || strings.Contains(bodyLower, "x-csrf-token") {
+		addTech("php")
 	}
 	if strings.Contains(bodyLower, "grafana-app") || strings.Contains(bodyLower, "window.grafanabootdata") {
 		addTech("grafana")
@@ -668,6 +675,44 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 	}
 	if strings.Contains(bodyLower, "kbn-name") || strings.Contains(bodyLower, "kibana") {
 		addTech("elasticsearch")
+	}
+
+	// 3. WAF & CDN Detection
+	var isWAF bool
+	var wafName string
+	allHeadersJoined := strings.ToLower(strings.Join(allHeaders, " "))
+
+	if strings.Contains(allHeadersJoined, "akamaighost") || strings.Contains(allHeadersJoined, "akamai") || strings.Contains(bodyLower, "akamaighost") || strings.Contains(allHeadersJoined, "x-akamai") {
+		isWAF = true
+		wafName = "Akamai (AkamaiGHost)"
+		addTech("waf-akamai")
+	} else if strings.Contains(allHeadersJoined, "cloudflare") || strings.Contains(allHeadersJoined, "cf-ray") || strings.Contains(bodyLower, "cloudflare") {
+		isWAF = true
+		wafName = "Cloudflare"
+		addTech("waf-cloudflare")
+	} else if strings.Contains(allHeadersJoined, "cloudfront") || strings.Contains(allHeadersJoined, "awselb") || strings.Contains(allHeadersJoined, "x-amz-cf-id") {
+		isWAF = true
+		wafName = "AWS CloudFront / ELB"
+		addTech("waf-aws")
+	} else if strings.Contains(allHeadersJoined, "imperva") || strings.Contains(allHeadersJoined, "incap_ses") || strings.Contains(allHeadersJoined, "visid_incap") {
+		isWAF = true
+		wafName = "Imperva Incapsula"
+		addTech("waf-imperva")
+	} else if strings.Contains(allHeadersJoined, "f5") || strings.Contains(allHeadersJoined, "big-ip") {
+		isWAF = true
+		wafName = "F5 BIG-IP"
+		addTech("waf-f5")
+	} else if strings.Contains(allHeadersJoined, "sucuri") {
+		isWAF = true
+		wafName = "Sucuri WAF"
+		addTech("waf-sucuri")
+	}
+
+	if isWAF {
+		core.LogWarning("WAF / CDN Tespit Edildi (%s): %s:%d — Gerçek teknoloji WAF arkasında gizlenmiş olabilir.", wafName, ip, port)
+		if resp.StatusCode == 400 || resp.StatusCode == 403 {
+			title = fmt.Sprintf("WAF Protected (%s - Real Tech Hidden)", wafName)
+		}
 	}
 
 	var detectedTechs []string
@@ -693,6 +738,8 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 		Technologies:  techs,
 		DetectedTechs: detectedTechs,
 		Banner:        SanitizeBanner(fmt.Sprintf("HTTP %d | Server: %s", resp.StatusCode, fullServerCombined)),
+		WAFDetected:   isWAF,
+		WAFName:       wafName,
 	}
 }
 
@@ -729,6 +776,7 @@ func shouldTryHTTP(port int, probeRes core.ProbeResult) bool {
 func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceDetail {
 	ip := portInfo.IP
 	port := portInfo.Port
+	hostname := portInfo.Hostname
 	protocol := portInfo.Protocol
 	if protocol == "" {
 		protocol = "tcp"
@@ -749,6 +797,7 @@ func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceD
 		}
 		return core.ServiceDetail{
 			IP:                 ip,
+			Hostname:           hostname,
 			Port:               port,
 			Protocol:           protocol,
 			ServiceName:        probeRes.ServiceName,
@@ -767,7 +816,7 @@ func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceD
 	// 3. If port is likely TLS or service is not yet final, perform TLS probe
 	isTLS := isLikelyTLSPort(port)
 	if isTLS || probeRes.ServiceName == "" {
-		sslInfo := ProbeTLSService(ip, port, timeout)
+		sslInfo := ProbeTLSService(ip, port, timeout, hostname)
 		if sslInfo != nil {
 			probeRes.SSLInfo = sslInfo
 			isTLS = true
@@ -788,10 +837,10 @@ func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceD
 
 	// 4. If HTTP is plausible, execute HTTP Probe
 	if shouldTryHTTP(port, probeRes) {
-		httpRes := ProbeHTTPService(ip, port, isTLS, timeout)
+		httpRes := ProbeHTTPService(ip, port, isTLS, timeout, hostname)
 		if !httpRes.IsHTTP && isTLS {
 			// Also test plain HTTP on TLS port (e.g. misconfigured dev servers)
-			httpRes = ProbeHTTPService(ip, port, false, 2*time.Second)
+			httpRes = ProbeHTTPService(ip, port, false, 2*time.Second, hostname)
 		}
 
 		if httpRes.IsHTTP {
@@ -817,6 +866,9 @@ func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceD
 			}
 			if svcDesc == "" {
 				svcDesc = "HTTP Web Service"
+			}
+			if httpRes.WAFDetected {
+				svcDesc = fmt.Sprintf("Web Service (%s)", httpRes.WAFName)
 			}
 
 			bannerRaw := httpRes.Banner
@@ -847,6 +899,7 @@ func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceD
 
 			return core.ServiceDetail{
 				IP:                 ip,
+				Hostname:           hostname,
 				Port:               port,
 				Protocol:           protocol,
 				ServiceName:        svcName,
@@ -863,6 +916,8 @@ func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceD
 				Evidence:           evidences,
 				SSLEnabled:         isTLS,
 				SSLInfo:            probeRes.SSLInfo,
+				WAFDetected:        httpRes.WAFDetected,
+				WAFName:            httpRes.WAFName,
 				State:              "open",
 			}
 		}

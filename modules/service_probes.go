@@ -876,13 +876,18 @@ func MatchBannerAgainstRules(spec ProbeSpec, text string) core.ProbeResult {
 }
 
 // ProbeTLSService performs a safe TLS handshake to collect SSL/TLS certificate metadata and observed hints.
-func ProbeTLSService(ip string, port int, timeout time.Duration) *core.SSLServiceInfo {
+func ProbeTLSService(ip string, port int, timeout time.Duration, hostname ...string) *core.SSLServiceInfo {
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	dialer := &net.Dialer{Timeout: timeout}
 
+	sniHost := ip
+	if len(hostname) > 0 && hostname[0] != "" {
+		sniHost = hostname[0]
+	}
+
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
-		ServerName:         ip,
+		ServerName:         sniHost,
 		MinVersion:         tls.VersionTLS10,
 	}
 

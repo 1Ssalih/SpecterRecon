@@ -117,10 +117,14 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 		core.LogStep("Adım 2: Port & Servis Taraması")
 		var targetIPs []string
 		seenIPs := make(map[string]bool)
+		hostMap := make(map[string]string)
 		for _, h := range hosts {
 			if !seenIPs[h.IP] {
 				seenIPs[h.IP] = true
 				targetIPs = append(targetIPs, h.IP)
+			}
+			if h.Hostname != "" {
+				hostMap[h.IP] = h.Hostname
 			}
 		}
 		parsedPorts := modules.ParsePortSpecs(portsFlag)
@@ -134,6 +138,15 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 			_ = core.SaveSummaryTxt(target, hosts, nil, nil, nil, earlyDuration, fmt.Sprintf("%s/summary.txt", outputDirFlag))
 			core.PrintSummaryTable(report)
 			return
+		}
+
+		// Attach Hostnames to openPorts for SNI & Host Header precision
+		for i := range openPorts {
+			if hn, ok := hostMap[openPorts[i].IP]; ok && hn != "" {
+				openPorts[i].Hostname = hn
+			} else if modules.IsDomainName(target) {
+				openPorts[i].Hostname = target
+			}
 		}
 		core.PrintPortsTable(openPorts)
 

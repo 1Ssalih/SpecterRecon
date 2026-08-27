@@ -90,7 +90,7 @@ var dirfuzzCmd = &cobra.Command{
 						port = p
 					}
 				}
-				probeRes := modules.ProbeHTTPService(host, port, isSSL, 3*time.Second)
+				probeRes := modules.ProbeHTTPService(host, port, isSSL, 3*time.Second, host)
 				if probeRes.IsHTTP {
 					fakeSvc := core.ServiceDetail{
 						ServiceName:      "http",
@@ -98,6 +98,8 @@ var dirfuzzCmd = &cobra.Command{
 						HTTPTitle:        probeRes.Title,
 						HTTPTechnologies: probeRes.Technologies,
 						DetectedTechs:    probeRes.DetectedTechs,
+						WAFDetected:      probeRes.WAFDetected,
+						WAFName:          probeRes.WAFName,
 					}
 					selectedWordlists, matchTag = modules.SelectWordlistForService(fakeSvc, wordlistMap, defaultWordlist)
 					if matchTag != "default" && matchTag != "common" {
@@ -125,8 +127,14 @@ var dirfuzzCmd = &cobra.Command{
 		for _, p := range selectedWordlists {
 			displayNames = append(displayNames, filepath.Base(p))
 		}
+
+		targetHost := ""
+		if u, err := url.Parse(targetURL); err == nil {
+			targetHost = u.Hostname()
+		}
+
 		core.LogInfo("Dizin taraması başlatılıyor (Liste: %s, Toplam %d kelime)...", strings.Join(displayNames, "+"), len(words))
-		findings := modules.FuzzTargetService(targetURL, words, matchTag, dfThreadsFlag, dfDelayFlag)
+		findings := modules.FuzzTargetServiceWithHost(targetURL, targetHost, words, matchTag, dfThreadsFlag, dfDelayFlag)
 		_ = core.SaveFindings(findings, dfJSONFlag, dfTxtFlag)
 		core.PrintDirFindingsTable(findings)
 		core.LogSuccess("Dizin taraması tamamlandı: %d yol bulundu (%s).", len(findings), dfTxtFlag)

@@ -301,6 +301,9 @@
                   <td><span class="badge badge-open">{{ .Port }}/{{ .Protocol }}</span></td>
                   <td><strong>{{ .ServiceName }}</strong></td>
                   <td>
+                    {{ if .WAFDetected }}
+                      <span class="badge" style="background:rgba(239,68,68,0.2); color:#f87171; border:1px solid rgba(239,68,68,0.4); margin-bottom:0.25rem; display:inline-block;">🛡️ {{ .WAFName }}</span>
+                    {{ end }}
                     {{ if .DetectedTechs }}
                       <div>
                         {{ range .DetectedTechs }}

@@ -12,7 +12,7 @@ import (
 )
 
 // AuditHTTPService performs full HTTP security configuration checks on a single service.
-func AuditHTTPService(ip string, port int, isSSL bool, timeout time.Duration) core.HttpAuditFinding {
+func AuditHTTPService(ip string, port int, isSSL bool, timeout time.Duration, hostname ...string) core.HttpAuditFinding {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
@@ -22,10 +22,15 @@ func AuditHTTPService(ip string, port int, isSSL bool, timeout time.Duration) co
 	}
 	targetURL := fmt.Sprintf("%s://%s:%d/", proto, ip, port)
 
+	sniHost := ip
+	if len(hostname) > 0 && hostname[0] != "" {
+		sniHost = hostname[0]
+	}
+
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
-			ServerName:         ip,
+			ServerName:         sniHost,
 			MinVersion:         tls.VersionTLS10,
 		},
 	}
@@ -38,7 +43,10 @@ func AuditHTTPService(ip string, port int, isSSL bool, timeout time.Duration) co
 	if err != nil {
 		return core.HttpAuditFinding{URL: targetURL, IP: ip, Port: port}
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/1.2")
+	if sniHost != "" {
+		req.Host = sniHost
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.8.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -203,7 +211,7 @@ func AuditHTTPMultiple(services []core.ServiceDetail, timeout time.Duration, out
 	var findings []core.HttpAuditFinding
 
 	for _, t := range targets {
-		f := AuditHTTPService(t.IP, t.Port, t.SSLEnabled, timeout)
+		f := AuditHTTPService(t.IP, t.Port, t.SSLEnabled, timeout, t.Hostname)
 		findings = append(findings, f)
 
 		msg := fmt.Sprintf("%s — Eksik Header: %d", f.URL, len(f.MissingHeaders))

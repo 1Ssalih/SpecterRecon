@@ -25,6 +25,7 @@ type HostInfo struct {
 // PortInfo represents an open or tested port.
 type PortInfo struct {
 	IP             string   `json:"ip"`
+	Hostname       string   `json:"hostname,omitempty"`
 	Port           int      `json:"port"`
 	Protocol       string   `json:"protocol"`
 	State          string   `json:"state"`
@@ -67,6 +68,7 @@ type ProbeResult struct {
 // ServiceDetail represents detailed banner & version information.
 type ServiceDetail struct {
 	IP                 string            `json:"ip"`
+	Hostname           string            `json:"hostname,omitempty"`
 	Port               int               `json:"port"`
 	Protocol           string            `json:"protocol"`
 	ServiceName        string            `json:"service_name"`
@@ -83,6 +85,8 @@ type ServiceDetail struct {
 	Evidence           []VersionEvidence `json:"evidence,omitempty"`
 	SSLEnabled         bool              `json:"ssl_enabled"`
 	SSLInfo            *SSLServiceInfo   `json:"ssl_info,omitempty"`
+	WAFDetected        bool              `json:"waf_detected,omitempty"`
+	WAFName            string            `json:"waf_name,omitempty"`
 	State              string            `json:"state"`
 }
 
