@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"strings"
 
@@ -27,30 +26,12 @@ func init() {
 
 // StartInteractiveShell launches an interactive terminal session (like Metasploit console).
 func StartInteractiveShell(rootCmd *cobra.Command) {
+	isInteractiveSession = true
 	core.PrintBanner(version)
-
-	// Güvenlik Guardrail: Shell moduna girişte tek seferlik yasal izin onayı
-	pterm.Println()
-	pterm.DefaultBox.WithTitle("YASAL UYARI & GÜVENLİK GUARDRAIL'I").
-		WithBoxStyle(pterm.NewStyle(pterm.FgYellow, pterm.Bold)).
-		Println("Bu interaktif oturumda çalıştıracağınız TÜM komutlar için\nyasal tarama izninizin olduğunu onaylamanız gerekmektedir.\n\nBu araç yalnızca yetkili olduğunuz sistemler (lab, CTF, izinli pentest) içindir.")
-
-	fmt.Print("\nBu oturumdaki tüm taramalar için yasal izniniz olduğunu onaylıyor musunuz? (e/H): ")
-	reader := bufio.NewReader(os.Stdin)
-	answer, _ := reader.ReadString('\n')
-	answer = strings.ToLower(strings.TrimSpace(answer))
-
-	if answer != "e" && answer != "y" && answer != "evet" && answer != "yes" {
-		core.LogError("Kullanıcı izni onaylamadı. İnteraktif konsol başlatılamıyor.")
-		return
-	}
-
-	// Onay alındıysa authorized flag'ini set et
-	authorizedFlag = true
 
 	pterm.DefaultBox.WithTitle("⚡ SPECTER-RECON İNTERAKTİF KONSOL MODU").
 		WithBoxStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
-		Println("Her seferinde '.\\specter-recon.exe' yazmanıza gerek yok!\nDoğrudan komutlarınızı yazabilirsiniz.\nÖrnekler:\n  - fullscan scanme.nmap.org\n  - scan scanme.nmap.org --extended\n  - ssl scanme.nmap.org:443\n  - dirfuzz http://scanme.nmap.org\n  - help\n  - exit")
+		Println("Her seferinde '.\\specter-recon.exe' yazmanıza gerek yok!\nDoğrudan komutlarınızı yazabilirsiniz.\n\nGüvenlik Guardrail'i: Komutlarınızda '--authorized' bayrağı kullanabilir\nya da komut çalıştırılırken hedef bazlı izin onayını yanıtlayabilirsiniz.\n\nÖrnekler:\n  - scan scanme.nmap.org\n  - fullscan scanme.nmap.org --authorized\n  - scan scanme.nmap.org --extended\n  - ssl scanme.nmap.org:443\n  - dirfuzz http://scanme.nmap.org --service apache --wordlist-size full\n  - help\n  - exit")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -79,6 +60,16 @@ func StartInteractiveShell(rootCmd *cobra.Command) {
 		if len(cmdArgs) == 0 {
 			continue
 		}
+
+		// Reset authorizedFlag before command execution unless --authorized in args
+		hasAuthArg := false
+		for _, a := range cmdArgs {
+			if a == "--authorized" {
+				hasAuthArg = true
+				break
+			}
+		}
+		authorizedFlag = hasAuthArg
 
 		// Execute root command with parsed args
 		rootCmd.SetArgs(cmdArgs)

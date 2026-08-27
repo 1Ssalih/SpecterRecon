@@ -15,7 +15,6 @@ var (
 	delayFlag        int
 	subdomainsFlag   bool
 	skipDirfuzzFlag  bool
-	skipVulnFlag     bool
 	outputDirFlag    string
 	extendedFlag     bool   // --extended: SSL/HTTP/SSH audit modüllerini aktif eder
 	wordlistSizeFlag string // --wordlist-size: quick (küçük listeler) veya full (SecLists)
@@ -23,11 +22,11 @@ var (
 
 var scanCmd = &cobra.Command{
 	Use:   "scan [target]",
-	Short: "Hedef üzerinde DNS + Discovery + Port + Banner + CVE + DirFuzz recon pipeline'ı çalıştırır",
+	Short: "Hedef üzerinde DNS + Discovery + Port + Banner + DirFuzz recon pipeline'ı çalıştırır",
 	Long: `Hedef üzerinde otomatik keşif (recon) pipeline'ı çalıştırır.
 
 Varsayılan olarak çekirdek modüller çalışır: DNS, Host Discovery, Port Scan,
-Banner Grabbing, CVE Matching ve Web Directory Fuzzing.
+Banner Grabbing ve Web Directory Fuzzing (Akıllı Wordlist / SecLists).
 
 --extended bayrağıyla pasif genişletilmiş modüller de aktif edilir:
 SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit.`,
@@ -40,16 +39,18 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
   # Genişletilmiş modüllerle (SSL + HTTP Audit + SSH Audit)
   specter-recon scan example.com --extended --authorized
 
-  # Kapsamlı wordlist ile (SecLists)
+  # Kapsamlı SecLists wordlist ile derin web dizin taraması
   specter-recon scan example.com --wordlist-size full --authorized
 
-  # Özel port aralığı ile
+  # Özel port aralığı ve thread limiti ile
   specter-recon scan 192.168.1.10 -p 1-1024 -t 100 --authorized`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
 		core.PrintBanner(version)
-		verifyScopePermission(target)
+		if !verifyScopePermission(target) {
+			return
+		}
 		core.EnsureOutputDir(outputDirFlag)
 
 		startTime := time.Now()
@@ -127,10 +128,10 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 		if len(openPorts) == 0 {
 			core.LogWarning("Hiçbir açık port tespit edilemedi. Tarama sonlandırılıyor.")
 			earlyDuration := time.Since(startTime).Seconds()
-			report := modules.BuildCompleteReport(target, dnsFindings, hosts, nil, nil, nil, nil, earlyDuration)
+			report := modules.BuildCompleteReport(target, dnsFindings, hosts, nil, nil, nil, earlyDuration)
 			report.ScanProfile = profileLabel
 			_, _ = modules.GenerateHTMLReport(report, "", fmt.Sprintf("%s/report.html", outputDirFlag))
-			_ = core.SaveSummaryTxt(target, hosts, nil, nil, nil, nil, earlyDuration, fmt.Sprintf("%s/summary.txt", outputDirFlag))
+			_ = core.SaveSummaryTxt(target, hosts, nil, nil, nil, earlyDuration, fmt.Sprintf("%s/summary.txt", outputDirFlag))
 			core.PrintSummaryTable(report)
 			return
 		}
@@ -140,16 +141,6 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 		core.LogStep("Adım 3: Banner Grabbing & Versiyon Tespiti")
 		services, _ := modules.GrabBannersAndServices(openPorts, min(30, threadsFlag), 3500*time.Millisecond, fmt.Sprintf("%s/services.json", outputDirFlag))
 		core.PrintServicesTable(services)
-
-		// Step 4: Vulnerability / CVE Matching
-		var vulns []core.VulnerabilityInfo
-		if !skipVulnFlag {
-			core.LogStep("Adım 4: CVE & Zafiyet Eşleştirmesi")
-			vulns, _ = modules.MatchVulnerabilities(services, "", true, fmt.Sprintf("%s/vulns.json", outputDirFlag))
-			core.PrintVulnsTable(vulns)
-		} else {
-			core.LogInfo("CVE eşleştirme adımı atlandı (--skip-vuln).")
-		}
 
 		// --- GENİŞLETİLMİŞ PASİF MODÜLLER (--extended) ---
 		var sslFindings []core.SslFinding
@@ -172,10 +163,10 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 			sshFindings, _ = modules.AuditSSHMultiple(services, 4*time.Second, fmt.Sprintf("%s/ssh_audit.json", outputDirFlag))
 		}
 
-		// Step 5: Web Directory Fuzzing
+		// Step 4: Web Directory Fuzzing
 		var dirFindings []core.DirFuzzFinding
 		if !skipDirfuzzFlag {
-			core.LogStep("Adım 5: Web Dizin & Dosya Fuzzing (Akıllı Wordlist)")
+			core.LogStep("Adım 4: Web Dizin & Dosya Fuzzing (Akıllı Wordlist / SecLists)")
 
 			defaultWordlist := "wordlists/common.txt"
 			sensitiveWordlist := "wordlists/sensitive.txt"
@@ -186,6 +177,7 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 
 			dirFindings, _ = modules.RunDirFuzzing(
 				services,
+				wordlistSizeFlag,
 				defaultWordlist,
 				sensitiveWordlist,
 				min(25, threadsFlag),
@@ -196,10 +188,10 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 			core.PrintDirFindingsTable(dirFindings)
 		}
 
-		// Step 6: Reporting
-		core.LogStep("Adım 6: Raporlama")
+		// Step 5: Reporting
+		core.LogStep("Adım 5: Raporlama")
 		duration := time.Since(startTime).Seconds()
-		report := modules.BuildCompleteReport(target, dnsFindings, hosts, openPorts, services, vulns, dirFindings, duration)
+		report := modules.BuildCompleteReport(target, dnsFindings, hosts, openPorts, services, dirFindings, duration)
 		report.ScanProfile = profileLabel
 
 		// Attach extended findings
@@ -212,7 +204,7 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 		// summary.txt
 		summaryPath := fmt.Sprintf("%s/summary.txt", outputDirFlag)
 		if err := core.SaveSummaryTxt(
-			target, hosts, openPorts, services, vulns, dirFindings, duration, summaryPath,
+			target, hosts, openPorts, services, dirFindings, duration, summaryPath,
 			sslFindings, httpAuditFindings, sshFindings,
 		); err == nil {
 			core.LogSuccess("Tarama özeti kaydedildi: %s", summaryPath)
@@ -228,10 +220,9 @@ func init() {
 	scanCmd.Flags().IntVarP(&delayFlag, "delay", "d", 0, "İstekler arası gecikme (ms) — Stealth modu")
 	scanCmd.Flags().BoolVar(&subdomainsFlag, "subdomains", false, "Domain taramasında subdomain brute-force'u aktif eder")
 	scanCmd.Flags().BoolVar(&skipDirfuzzFlag, "skip-dirfuzz", false, "Dizin fuzzing adımını atla")
-	scanCmd.Flags().BoolVar(&skipVulnFlag, "skip-vuln", false, "CVE zafiyet eşleştirme adımını atla")
 	scanCmd.Flags().StringVarP(&outputDirFlag, "output-dir", "o", "output", "Çıktı klasörü")
 	scanCmd.Flags().BoolVar(&extendedFlag, "extended", false, "Genişletilmiş pasif modülleri aktif eder (SSL/TLS + HTTP Audit + SSH Audit)")
-	scanCmd.Flags().StringVar(&wordlistSizeFlag, "wordlist-size", "quick", "Wordlist boyutu: 'quick' (küçük yerleşik listeler) veya 'full' (SecLists)")
+	scanCmd.Flags().StringVar(&wordlistSizeFlag, "wordlist-size", "quick", "Wordlist boyutu: 'quick' (küçük/hızlı listeler) veya 'full' (SecLists)")
 
 	RootCmd.AddCommand(scanCmd)
 }

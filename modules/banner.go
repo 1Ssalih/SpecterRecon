@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/specter-recon/recon-tool/core"
 )
@@ -108,12 +109,6 @@ var ServiceRegexRules = []ServiceRegexRule{
 		ExtractVer:  func(m []string) string { return m[1] },
 	},
 	{
-		Pattern:     regexp.MustCompile(`(?i)(5\.\d+\.[\d\.\-\w]+|8\.\d+\.[\d\.\-\w]+)`),
-		ServiceName: "mysql",
-		Description: "MySQL",
-		ExtractVer:  func(m []string) string { return m[1] },
-	},
-	{
 		Pattern:     regexp.MustCompile(`(?i)redis_version:([\d\.]+)`),
 		ServiceName: "redis",
 		Description: "Redis",
@@ -121,27 +116,103 @@ var ServiceRegexRules = []ServiceRegexRule{
 	},
 }
 
+// SanitizeBanner removes non-printable, control, and invalid binary characters from banner strings.
+func SanitizeBanner(s string) string {
+	if s == "" {
+		return ""
+	}
+	var sb strings.Builder
+	for _, r := range s {
+		// Keep printable characters, space, tab, newline, carriage return and valid printable unicode
+		if (r >= 32 && r <= 126) || r == '\t' || r == '\n' || r == '\r' || (r > 127 && unicode.IsPrint(r)) {
+			sb.WriteRune(r)
+		} else if r == 0 || r < 32 || r == 127 || r == 0xFFFD {
+			// Replace non-printable bytes with space
+			sb.WriteByte(' ')
+		}
+	}
+	// Normalize spaces
+	cleaned := strings.Join(strings.Fields(sb.String()), " ")
+	return strings.TrimSpace(cleaned)
+}
+
+// ParseMySQLHandshake parses the raw binary MySQL/MariaDB initial handshake packet.
+func ParseMySQLHandshake(buf []byte) (serviceName, description, version, rawBanner string) {
+	if len(buf) < 5 {
+		return "", "", "", ""
+	}
+	// MySQL Handshake packet layout:
+	// buf[0..2] = 3-byte payload length
+	// buf[3]    = sequence id
+	// buf[4]    = protocol version (usually 10 for MySQL 5.x/8.x/MariaDB)
+	// buf[5..]  = null-terminated server version string
+	protoVer := buf[4]
+	if protoVer != 10 && protoVer != 9 {
+		return "", "", "", ""
+	}
+
+	nullIdx := -1
+	for i := 5; i < len(buf); i++ {
+		if buf[i] == 0 {
+			nullIdx = i
+			break
+		}
+	}
+
+	var verStr string
+	if nullIdx != -1 {
+		verStr = string(buf[5:nullIdx])
+	} else if len(buf) > 5 {
+		verStr = string(buf[5:])
+	}
+	verStr = SanitizeBanner(verStr)
+	if verStr == "" {
+		return "", "", "", ""
+	}
+
+	serviceName = "mysql"
+	description = "MySQL Database Server"
+	version = verStr
+
+	if strings.Contains(strings.ToLower(verStr), "mariadb") {
+		description = "MariaDB Database Server"
+		mariaMatch := regexp.MustCompile(`^([\d\.]+)-MariaDB`).FindStringSubmatch(verStr)
+		if len(mariaMatch) > 1 {
+			version = mariaMatch[1]
+		}
+	} else {
+		mysqlMatch := regexp.MustCompile(`^([\d\.]+)`).FindStringSubmatch(verStr)
+		if len(mysqlMatch) > 1 {
+			version = mysqlMatch[1]
+		}
+	}
+
+	rawBanner = fmt.Sprintf("MySQL Handshake (Protocol %d, Version %s)", protoVer, verStr)
+	return serviceName, description, version, rawBanner
+}
+
 // ExtractVersionFromText extracts service and version from banner text using regexes.
 func ExtractVersionFromText(text string) (serviceName, description, version string) {
+	sanitized := SanitizeBanner(text)
 	for _, rule := range ServiceRegexRules {
-		matches := rule.Pattern.FindStringSubmatch(text)
+		matches := rule.Pattern.FindStringSubmatch(sanitized)
 		if len(matches) > 0 {
 			ver := ""
 			if rule.ExtractVer != nil {
 				ver = rule.ExtractVer(matches)
 			}
-			return rule.ServiceName, rule.Description, ver
+			return rule.ServiceName, rule.Description, SanitizeBanner(ver)
 		}
 	}
 	return "", "", ""
 }
 
-// GrabRawSocketBanner connects to raw TCP socket and reads banner.
-func GrabRawSocketBanner(ip string, port int, timeout time.Duration) string {
+// GrabRawSocketBanner connects to raw TCP socket and reads banner, handling binary protocols cleanly.
+func GrabRawSocketBanner(ip string, port int, timeout time.Duration) (banner string, parsedSvc string, parsedDesc string, parsedVer string) {
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
-		return ""
+		return "", "", "", ""
 	}
 	defer conn.Close()
 
@@ -149,7 +220,18 @@ func GrabRawSocketBanner(ip string, port int, timeout time.Duration) string {
 	reader := bufio.NewReader(conn)
 	buf := make([]byte, 1024)
 	n, _ := reader.Read(buf)
-	banner := strings.TrimSpace(string(buf[:n]))
+
+	if n > 0 {
+		// Check for binary MySQL Handshake
+		if port == 3306 || (n >= 5 && (buf[4] == 10 || buf[4] == 9)) {
+			sName, sDesc, sVer, myBanner := ParseMySQLHandshake(buf[:n])
+			if sName != "" {
+				return myBanner, sName, sDesc, sVer
+			}
+		}
+	}
+
+	banner = SanitizeBanner(string(buf[:n]))
 
 	if banner == "" {
 		// Send probe
@@ -165,10 +247,12 @@ func GrabRawSocketBanner(ip string, port int, timeout time.Duration) string {
 		_, _ = conn.Write([]byte(probe))
 		_ = conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
 		n, _ = reader.Read(buf)
-		banner = strings.TrimSpace(string(buf[:n]))
+		if n > 0 {
+			banner = SanitizeBanner(string(buf[:n]))
+		}
 	}
 
-	return banner
+	return banner, "", "", ""
 }
 
 type HTTPProbeResult struct {
@@ -188,7 +272,7 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 	url := fmt.Sprintf("%s://%s:%d/", proto, ip, port)
 
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: ip},
 	}
 	client := &http.Client{
 		Transport: tr,
@@ -216,9 +300,12 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 		kLower := strings.ToLower(k)
 		if kLower == "server" || kLower == "x-powered-by" || kLower == "via" {
 			for _, v := range vList {
-				allHeaders = append(allHeaders, v)
-				if kLower == "server" && serverHeader == "" {
-					serverHeader = v
+				cleanVal := SanitizeBanner(v)
+				if cleanVal != "" {
+					allHeaders = append(allHeaders, cleanVal)
+					if kLower == "server" && serverHeader == "" {
+						serverHeader = cleanVal
+					}
 				}
 			}
 		}
@@ -231,7 +318,7 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 	titleRegex := regexp.MustCompile(`(?i)<title[^>]*>(.*?)</title>`)
 	titleMatches := titleRegex.FindStringSubmatch(bodyStr)
 	if len(titleMatches) > 1 {
-		title = strings.TrimSpace(titleMatches[1])
+		title = SanitizeBanner(titleMatches[1])
 		if len(title) > 100 {
 			title = title[:97] + "..."
 		}
@@ -256,10 +343,10 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 
 	return HTTPProbeResult{
 		IsHTTP:       true,
-		Server:       fullServerCombined,
+		Server:       SanitizeBanner(fullServerCombined),
 		Title:        title,
 		Technologies: techs,
-		Banner:       fmt.Sprintf("HTTP %d | Server: %s", resp.StatusCode, fullServerCombined),
+		Banner:       SanitizeBanner(fmt.Sprintf("HTTP %d | Server: %s", resp.StatusCode, fullServerCombined)),
 	}
 }
 
@@ -309,8 +396,13 @@ func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceD
 	}
 
 	if serviceVersion == "" {
-		rawBanner := GrabRawSocketBanner(ip, port, timeout)
-		if rawBanner != "" {
+		rawBanner, parsedSvc, parsedDesc, parsedVer := GrabRawSocketBanner(ip, port, timeout)
+		if parsedSvc != "" {
+			serviceName = parsedSvc
+			serviceDesc = parsedDesc
+			serviceVersion = parsedVer
+			bannerRaw = rawBanner
+		} else if rawBanner != "" {
 			if bannerRaw != "" {
 				bannerRaw = bannerRaw + " | " + rawBanner
 			} else {
@@ -329,6 +421,7 @@ func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceD
 		serviceDesc = strings.ToUpper(serviceName) + " Service"
 	}
 
+	bannerRaw = SanitizeBanner(bannerRaw)
 	if len(bannerRaw) > 255 {
 		bannerRaw = bannerRaw[:252] + "..."
 	}
@@ -337,12 +430,12 @@ func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceD
 		IP:                 ip,
 		Port:               port,
 		Protocol:           portInfo.Protocol,
-		ServiceName:        serviceName,
-		ServiceDescription: serviceDesc,
-		ServiceVersion:     serviceVersion,
+		ServiceName:        SanitizeBanner(serviceName),
+		ServiceDescription: SanitizeBanner(serviceDesc),
+		ServiceVersion:     SanitizeBanner(serviceVersion),
 		BannerRaw:          bannerRaw,
-		HTTPTitle:          httpTitle,
-		HTTPServer:         httpServer,
+		HTTPTitle:          SanitizeBanner(httpTitle),
+		HTTPServer:         SanitizeBanner(httpServer),
 		HTTPTechnologies:   httpTechs,
 		SSLEnabled:         isSSL,
 		State:              "open",

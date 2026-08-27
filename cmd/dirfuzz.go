@@ -1,13 +1,15 @@
 package cmd
 
 import (
+	"net/url"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/specter-recon/recon-tool/core"
 	"github.com/specter-recon/recon-tool/modules"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
-	"os"
 )
 
 var (
@@ -23,51 +25,80 @@ var (
 var dirfuzzCmd = &cobra.Command{
 	Use:   "dirfuzz [url]",
 	Short: "Web hedefinde dizin/dosya fuzzing çalıştırır (akıllı wordlist seçimi destekler)",
-	Example: `  # Varsayılan wordlist ile
+	Example: `  # Varsayılan akıllı wordlist ile
   specter-recon dirfuzz http://example.com --authorized
 
-  # Servis bazlı akıllı wordlist seçimi
-  specter-recon dirfuzz http://example.com --service jenkins --authorized
+  # Servis bazlı akıllı wordlist seçimi (iis, apache, jenkins, wordpress, tomcat vb.)
+  specter-recon dirfuzz http://example.com --service iis --authorized
 
-  # SecLists ile kapsamlı tarama
+  # SecLists ile derin ve kapsamlı tarama
   specter-recon dirfuzz http://example.com --wordlist-size full --authorized
 
-  # Özel wordlist ile
-  specter-recon dirfuzz http://example.com -w my_wordlist.txt --authorized`,
+  # Özel wordlist ve thread limiti ile
+  specter-recon dirfuzz http://example.com -w custom.txt -t 50 --authorized`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		url := args[0]
+		targetURL := args[0]
 		core.PrintBanner(version)
 		core.EnsureOutputDir("output")
-		verifyScopePermission(url)
-
-		selectedWordlist := dfWordlistFlag
-
-		// Akıllı wordlist seçimi: --service verilmişse servise göre wordlist seç
-		if dfServiceFlag != "" {
-			wordlistMap := loadWordlistMap()
-			if len(wordlistMap) > 0 {
-				// Sahte bir ServiceDetail oluştur, akıllı eşleştirme için
-				fakeSvc := core.ServiceDetail{
-					ServiceName:        "http",
-					ServiceDescription: dfServiceFlag,
-				}
-				wPath, key := modules.SelectWordlistForService(fakeSvc, wordlistMap, dfWordlistFlag)
-				if key != "default" && key != "" {
-					core.LogInfo("Servis '%s' için akıllı wordlist seçildi: %s (%s)", dfServiceFlag, filepath.Base(wPath), key)
-					selectedWordlist = wPath
-				}
-			}
+		if !verifyScopePermission(targetURL) {
+			return
 		}
 
-		// --wordlist-size full ise SecLists'ten büyük listeyi kullan
-		if dfWordlistSizeFlag == "full" && dfServiceFlag == "" {
-			fullPath := "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt"
-			if _, err := os.Stat(fullPath); err == nil {
-				selectedWordlist = fullPath
-				core.LogInfo("SecLists kapsamlı wordlist kullanılıyor: %s", fullPath)
-			} else {
-				core.LogWarning("SecLists bulunamadı (%s), varsayılan küçük wordlist kullanılıyor.", fullPath)
+		// Ensure URL has scheme
+		if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
+			targetURL = "http://" + targetURL
+		}
+
+		wordlistMap := modules.LoadServiceWordlistMap("", dfWordlistSizeFlag)
+		defaultWordlist := "wordlists/common.txt"
+		if dfWordlistSizeFlag == "full" {
+			defaultWordlist = "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt"
+		}
+		if cmd.Flags().Changed("wordlist") {
+			defaultWordlist = dfWordlistFlag
+		}
+
+		selectedWordlist := defaultWordlist
+		matchTag := "common"
+
+		if dfServiceFlag != "" {
+			// Explicit service provided by user
+			fakeSvc := core.ServiceDetail{
+				ServiceName:        "http",
+				ServiceDescription: dfServiceFlag,
+			}
+			selectedWordlist, matchTag = modules.SelectWordlistForService(fakeSvc, wordlistMap, defaultWordlist)
+			core.LogInfo("Belirtilen servis '%s' için wordlist: %s (Kategori: %s)", dfServiceFlag, filepath.Base(selectedWordlist), matchTag)
+		} else if !cmd.Flags().Changed("wordlist") {
+			// Auto-probe target URL to detect service banner
+			core.LogInfo("Hedef teknoloji tespiti için hızlı HTTP probe yapılıyor...")
+			u, err := url.Parse(targetURL)
+			if err == nil {
+				host := u.Hostname()
+				port := 80
+				isSSL := u.Scheme == "https"
+				if isSSL {
+					port = 443
+				}
+				if u.Port() != "" {
+					if p, pErr := strconv.Atoi(u.Port()); pErr == nil {
+						port = p
+					}
+				}
+				probeRes := modules.ProbeHTTPService(host, port, isSSL, 3*time.Second)
+				if probeRes.IsHTTP {
+					fakeSvc := core.ServiceDetail{
+						ServiceName:      "http",
+						HTTPServer:       probeRes.Server,
+						HTTPTitle:        probeRes.Title,
+						HTTPTechnologies: probeRes.Technologies,
+					}
+					selectedWordlist, matchTag = modules.SelectWordlistForService(fakeSvc, wordlistMap, defaultWordlist)
+					if matchTag != "default" && matchTag != "common" {
+						core.LogSuccess("Otomatik servis tespiti yapıldı (%s %s) ➔ Wordlist: %s (%s)", probeRes.Server, probeRes.Title, filepath.Base(selectedWordlist), matchTag)
+					}
+				}
 			}
 		}
 
@@ -77,25 +108,12 @@ var dirfuzzCmd = &cobra.Command{
 			return
 		}
 
-		matchTag := filepath.Base(selectedWordlist)
-		findings := modules.FuzzTargetService(url, words, matchTag, dfThreadsFlag, dfDelayFlag)
+		core.LogInfo("Dizin taraması başlatılıyor (Liste: %s, Toplam %d kelime)...", filepath.Base(selectedWordlist), len(words))
+		findings := modules.FuzzTargetService(targetURL, words, matchTag, dfThreadsFlag, dfDelayFlag)
 		_ = core.SaveFindings(findings, dfJSONFlag, dfTxtFlag)
 		core.PrintDirFindingsTable(findings)
-		core.LogSuccess("Dizin taraması bitti: %d yol bulundu.", len(findings))
+		core.LogSuccess("Dizin taraması tamamlandı: %d yol bulundu (%s).", len(findings), dfTxtFlag)
 	},
-}
-
-// loadWordlistMap reads service_wordlist_map.yaml for smart wordlist selection.
-func loadWordlistMap() map[string]string {
-	data, err := os.ReadFile("wordlists/service_wordlist_map.yaml")
-	if err != nil {
-		return nil
-	}
-	var m map[string]string
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		return nil
-	}
-	return m
 }
 
 func init() {
@@ -104,8 +122,8 @@ func init() {
 	dirfuzzCmd.Flags().IntVarP(&dfDelayFlag, "delay", "d", 0, "İstekler arası gecikme (ms)")
 	dirfuzzCmd.Flags().StringVar(&dfJSONFlag, "output-json", "output/dirs.json", "Çıktı JSON dosyası")
 	dirfuzzCmd.Flags().StringVar(&dfTxtFlag, "output-txt", "output/findings.txt", "Çıktı metin dosyası")
-	dirfuzzCmd.Flags().StringVar(&dfServiceFlag, "service", "", "Hedef servis tipi (jenkins, apache, wordpress vb.) — akıllı wordlist seçimi için")
-	dirfuzzCmd.Flags().StringVar(&dfWordlistSizeFlag, "wordlist-size", "quick", "Wordlist boyutu: 'quick' (küçük yerleşik listeler) veya 'full' (SecLists)")
+	dirfuzzCmd.Flags().StringVar(&dfServiceFlag, "service", "", "Hedef servis tipi (iis, apache, jenkins, wordpress, tomcat, php vb.)")
+	dirfuzzCmd.Flags().StringVar(&dfWordlistSizeFlag, "wordlist-size", "quick", "Wordlist boyutu: 'quick' (hızlı/hafif) veya 'full' (SecLists)")
 
 	RootCmd.AddCommand(dirfuzzCmd)
 }

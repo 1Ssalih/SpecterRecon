@@ -1,4 +1,4 @@
-# SpecterRecon - Network Reconnaissance & Vulnerability Scanner Configuration
+# SpecterRecon - High Performance Network Reconnaissance Engine Configuration
 
 app:
   name: "SpecterRecon"
@@ -32,17 +32,9 @@ banner:
   http_timeout: 3.0
   probes:
     generic: "\r\n\r\n"
-    ftp: "\r\n"
+    ftp: "SYST\r\n"
     smtp: "EHLO recon-tool.local\r\n"
     http: "HEAD / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Mozilla/5.0 (ReconTool/1.0)\r\nConnection: close\r\n\r\n"
-
-# CVE & Vulnerability Matcher Settings
-vuln_match:
-  nvd_api_url: "https://services.nvd.nist.gov/rest/json/cves/2.0"
-  nvd_api_key: ""
-  request_timeout: 10.0
-  max_cves_per_service: 10
-  min_cvss_score: 4.0
 
 # Directory Bruteforce Settings
 dirfuzz:
@@ -51,7 +43,7 @@ dirfuzz:
   concurrency: 30
   timeout: 4.0
   status_codes_of_interest: [200, 204, 301, 302, 307, 308, 401, 403, 405, 500]
-  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 ReconTool/1.0"
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 SpecterRecon/1.0"
   extensions: [".php", ".html", ".js", ".json", ".txt", ".bak", ".env", ".zip"]
 
 # Output Directory
@@ -60,7 +52,6 @@ output:
   hosts_file: "output/hosts.json"
   ports_file: "output/ports.json"
   services_file: "output/services.json"
-  vulns_file: "output/vulns.json"
   dirs_file: "output/dirs.json"
   findings_file: "output/findings.txt"
   report_html_file: "output/report.html"

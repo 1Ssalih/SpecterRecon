@@ -104,26 +104,57 @@ func TestExtractVersionFromText(t *testing.T) {
 	}
 }
 
-func TestMatchOfflineCVEs(t *testing.T) {
-	svc := core.ServiceDetail{
-		IP:                 "127.0.0.1",
-		Port:               80,
-		ServiceName:        "http",
-		ServiceDescription: "Apache HTTP Server",
-		ServiceVersion:     "2.4.49",
+func TestSanitizeBanner(t *testing.T) {
+	raw := "SSH-2.0-OpenSSH_8.9p1\r\n\x00\x01\x02\x07Ubuntu"
+	cleaned := SanitizeBanner(raw)
+	if strings.Contains(cleaned, "\x00") || strings.Contains(cleaned, "\x01") || strings.Contains(cleaned, "\r") {
+		t.Errorf("SanitizeBanner non-printable karakterleri temizleyemedi: %q", cleaned)
 	}
-	vulns := MatchOfflineCVEs(svc)
-	found := false
-	for _, v := range vulns {
-		if v.CVEID == "CVE-2021-41773" {
-			found = true
-			if v.Severity != "HIGH" || v.CVSSScore != 7.5 {
-				t.Errorf("CVE-2021-41773 bilgileri hatali: %v", v)
-			}
-		}
+	if !strings.Contains(cleaned, "SSH-2.0-OpenSSH_8.9p1") {
+		t.Errorf("SanitizeBanner metin icerigini bozdu: %s", cleaned)
 	}
-	if !found {
-		t.Errorf("CVE-2021-41773 tespit edilemedi")
+}
+
+func TestParseMySQLHandshake(t *testing.T) {
+	// Simulated MySQL handshake packet:
+	// Length: 36 (0x24 0x00 0x00), Seq: 0, Proto: 10 (0x0a), Version: "8.0.32-0ubuntu0.22.04.2\x00"
+	mockPacket := []byte{
+		0x24, 0x00, 0x00, 0x00, // length & seq
+		0x0a,                                                                       // protocol version (10)
+		'8', '.', '0', '.', '3', '2', '-', '0', 'u', 'b', 'u', 'n', 't', 'u', 0x00, // null-terminated version string
+		0x01, 0x02, 0x03, 0x04, // auth data
+	}
+
+	name, desc, ver, banner := ParseMySQLHandshake(mockPacket)
+	if name != "mysql" {
+		t.Errorf("Beklenen servis adı 'mysql', alinan '%s'", name)
+	}
+	if ver != "8.0.32" {
+		t.Errorf("Beklenen versiyon '8.0.32', alinan '%s'", ver)
+	}
+	if !strings.Contains(desc, "MySQL") {
+		t.Errorf("Beklenen aciklama 'MySQL', alinan '%s'", desc)
+	}
+	if !strings.Contains(banner, "8.0.32-0ubuntu") {
+		t.Errorf("Beklenen banner '8.0.32-0ubuntu', alinan '%s'", banner)
+	}
+}
+
+func TestWordlistSizeMode(t *testing.T) {
+	quickMap := LoadServiceWordlistMap("", "quick")
+	if quickMap == nil || len(quickMap) == 0 {
+		t.Fatalf("LoadServiceWordlistMap quick modu bos dondurdu")
+	}
+
+	fullMap := LoadServiceWordlistMap("", "full")
+	if fullMap == nil || len(fullMap) == 0 {
+		t.Fatalf("LoadServiceWordlistMap full modu bos dondurdu")
+	}
+
+	// Full mode must contain SecLists paths
+	iisFull, ok := fullMap["iis"]
+	if !ok || !strings.Contains(iisFull, "SecLists") {
+		t.Errorf("Full modunda IIS icin SecLists yolu bekleniyordu, alinan: %s", iisFull)
 	}
 }
 
@@ -138,13 +169,6 @@ func TestReportGeneration(t *testing.T) {
 	host := core.NewHostInfo("127.0.0.1", "tcp_ping")
 	port := core.PortInfo{IP: "127.0.0.1", Port: 80, ServiceName: "http", State: "open"}
 	svc := core.ServiceDetail{IP: "127.0.0.1", Port: 80, ServiceName: "http", ServiceVersion: "2.4.49"}
-	vuln := core.VulnerabilityInfo{
-		CVEID:           "CVE-2021-41773",
-		CVSSScore:       7.5,
-		Severity:        "HIGH",
-		Description:     "Path traversal",
-		AffectedService: "http (127.0.0.1:80)",
-	}
 	finding := core.DirFuzzFinding{
 		URL:             "http://127.0.0.1:80/admin",
 		Path:            "/admin",
@@ -152,7 +176,7 @@ func TestReportGeneration(t *testing.T) {
 		WordlistMatched: "apache",
 	}
 
-	report := BuildCompleteReport("test.local", []core.DNSFinding{dns}, []core.HostInfo{host}, []core.PortInfo{port}, []core.ServiceDetail{svc}, []core.VulnerabilityInfo{vuln}, []core.DirFuzzFinding{finding}, 1.25)
+	report := BuildCompleteReport("test.local", []core.DNSFinding{dns}, []core.HostInfo{host}, []core.PortInfo{port}, []core.ServiceDetail{svc}, []core.DirFuzzFinding{finding}, 1.25)
 	outPath, err := GenerateHTMLReport(report, "../templates/report.html.tmpl", "output/test/test_report.html")
 	if err != nil {
 		t.Fatalf("GenerateHTMLReport hatasi: %v", err)

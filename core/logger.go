@@ -211,33 +211,6 @@ func PrintServicesTable(services []ServiceDetail) {
 		WithData(tableData).Render()
 }
 
-// PrintVulnsTable prints detected CVE vulnerabilities in a clean PTerm table.
-func PrintVulnsTable(vulns []VulnerabilityInfo) {
-	if len(vulns) == 0 {
-		pterm.Success.Println("Taranan servislerde bilinen kritik CVE zafiyeti bulunamadı.")
-		return
-	}
-	tableData := pterm.TableData{
-		{"CVE ID", "CVSS", "Şiddet", "Etkilenen Servis", "Zafiyet Açıklaması"},
-	}
-	for _, v := range vulns {
-		desc := v.Description
-		if len(desc) > 65 {
-			desc = desc[:62] + "..."
-		}
-		tableData = append(tableData, []string{
-			v.CVEID,
-			fmt.Sprintf("%.1f", v.CVSSScore),
-			v.Severity,
-			v.AffectedService,
-			desc,
-		})
-	}
-	pterm.Println()
-	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgRed, pterm.Bold)).
-		WithData(tableData).Render()
-}
-
 // PrintDirFindingsTable prints web fuzzing directory findings in a clean PTerm table.
 func PrintDirFindingsTable(findings []DirFuzzFinding) {
 	if len(findings) == 0 {
@@ -287,18 +260,38 @@ func PrintSslTable(findings []SslFinding) {
 		{"IP:Port", "Sertifika Konusu", "Son Kullanma", "Kalan Gün", "Risk/Notlar"},
 	}
 	for _, f := range findings {
+		subj := f.Subject
+		if subj == "" && len(f.SANs) > 0 {
+			subj = f.SANs[0]
+		}
+		if subj == "" {
+			subj = "(Alınamadı)"
+		}
+
 		days := strconv.Itoa(f.DaysUntilExpiry)
 		if f.IsExpired {
 			days = "SÜRESİ DOLMUŞ!"
+		} else if f.ExpiryDate == "" {
+			days = "-"
 		}
+
 		notes := strings.Join(f.Notes, "; ")
+		if notes == "" {
+			notes = "Güvenli / Geçerli Sertifika"
+		}
 		if len(notes) > 40 {
 			notes = notes[:37] + "..."
 		}
+
+		expiry := f.ExpiryDate
+		if expiry == "" {
+			expiry = "-"
+		}
+
 		tableData = append(tableData, []string{
 			fmt.Sprintf("%s:%d", f.IP, f.Port),
-			f.Subject,
-			f.ExpiryDate,
+			subj,
+			expiry,
 			days,
 			notes,
 		})
@@ -362,7 +355,6 @@ func PrintSummaryTable(report CompleteScanReport) {
 	tableData = append(tableData, [][]string{
 		{"Keşfedilen Hostlar", strconv.Itoa(report.TotalHosts)},
 		{"Açık Portlar", strconv.Itoa(report.TotalOpenPorts)},
-		{"Tespit Edilen Zafiyetler", strconv.Itoa(report.TotalVulns)},
 		{"Web Dizin Bulguları", strconv.Itoa(report.TotalFindings)},
 		{"Toplam Süre", fmt.Sprintf("%.2f saniye", report.DurationSeconds)},
 		{"Özet Dosyası (TXT)", "output/summary.txt"},

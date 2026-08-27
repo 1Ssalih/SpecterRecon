@@ -26,12 +26,11 @@ var reportCmd = &cobra.Command{
 		core.PrintBanner(version)
 		core.EnsureOutputDir(repOutputDir)
 
-		// JSON çıktılarını output dizininden oku
+		// JSON çıktılarından oku
 		dnsFindings, _ := core.LoadIPList(filepath.Join(repOutputDir, "ip_list.json"))
 		hosts, _ := core.LoadHosts(filepath.Join(repOutputDir, "hosts.json"))
 		ports, _ := core.LoadPorts(filepath.Join(repOutputDir, "ports.json"))
 		services, _ := core.LoadServices(filepath.Join(repOutputDir, "services.json"))
-		vulns, _ := core.LoadVulns(filepath.Join(repOutputDir, "vulns.json"))
 
 		var findings []core.DirFuzzFinding
 		_ = core.LoadJSON(filepath.Join(repOutputDir, "dirs.json"), &findings)
@@ -46,7 +45,7 @@ var reportCmd = &cobra.Command{
 		var sshFindings []core.SshAuditFinding
 		_ = core.LoadJSON(filepath.Join(repOutputDir, "ssh_audit.json"), &sshFindings)
 
-		report := modules.BuildCompleteReport(repTargetFlag, dnsFindings, hosts, ports, services, vulns, findings, 0.0)
+		report := modules.BuildCompleteReport(repTargetFlag, dnsFindings, hosts, ports, services, findings, 0.0)
 
 		report.SslFindings = sslFindings
 		report.HttpAuditFindings = httpAuditFindings
@@ -62,7 +61,7 @@ var reportCmd = &cobra.Command{
 		// summary.txt — tüm bulgular tek dosyada
 		summaryPath := filepath.Join(repOutputDir, "summary.txt")
 		if sErr := core.SaveSummaryTxt(
-			repTargetFlag, hosts, ports, services, vulns, findings, 0.0, summaryPath,
+			repTargetFlag, hosts, ports, services, findings, 0.0, summaryPath,
 			sslFindings, httpAuditFindings, sshFindings,
 		); sErr == nil {
 			core.LogSuccess("Tarama özeti kaydedildi: %s", summaryPath)

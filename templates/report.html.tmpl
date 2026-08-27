@@ -227,10 +227,6 @@
         <div class="metric-title">Açık Portlar</div>
         <div class="metric-value">{{ .TotalOpenPorts }}</div>
       </div>
-      <div class="metric-card critical">
-        <div class="metric-title">Tespit Edilen Zafiyetler</div>
-        <div class="metric-value">{{ .TotalVulns }}</div>
-      </div>
       <div class="metric-card dirs">
         <div class="metric-title">Web Bulguları</div>
         <div class="metric-value">{{ .TotalFindings }}</div>
@@ -328,66 +324,6 @@
       </div>
     </div>
 
-    <!-- Vulnerabilities -->
-    <div class="section-card">
-      <div class="section-header">
-        <div class="section-title"><span>🛡️</span> Tespit Edilen Zafiyetler & CVE'ler</div>
-        <span class="section-badge">{{ .TotalVulns }} Zafiyet</span>
-      </div>
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>CVE ID</th>
-              <th>Şiddet (CVSS)</th>
-              <th>Etkilenen Servis</th>
-              <th>Açıklama & Risk</th>
-              <th>Öneri & Referans</th>
-            </tr>
-          </thead>
-          <tbody>
-            {{ $vulnCount := 0 }}
-            {{ range .Hosts }}
-              {{ range .Vulnerabilities }}
-                {{ $vulnCount = 1 }}
-                <tr>
-                  <td><strong style="color: #f0f6fc; font-family:'JetBrains Mono'">{{ .CVEID }}</strong></td>
-                  <td>
-                    {{ if eq .Severity "CRITICAL" }}
-                      <span class="badge badge-crit">CRITICAL ({{ printf "%.1f" .CVSSScore }})</span>
-                    {{ else if eq .Severity "HIGH" }}
-                      <span class="badge badge-high">HIGH ({{ printf "%.1f" .CVSSScore }})</span>
-                    {{ else if eq .Severity "MEDIUM" }}
-                      <span class="badge badge-med">MEDIUM ({{ printf "%.1f" .CVSSScore }})</span>
-                    {{ else }}
-                      <span class="badge badge-low">{{ .Severity }} ({{ printf "%.1f" .CVSSScore }})</span>
-                    {{ end }}
-                  </td>
-                  <td><span class="code-tag">{{ .AffectedService }}</span></td>
-                  <td class="vuln-desc">{{ .Description }}</td>
-                  <td>
-                    {{ if .Mitigation }}
-                      <div style="margin-bottom:0.2rem; font-size:0.78rem; color:var(--success-color)"><strong>Öneri:</strong> {{ .Mitigation }}</div>
-                    {{ end }}
-                    {{ range .References }}
-                      <a href="{{ . }}" target="_blank" class="ref-link">🔗 Referans</a><br>
-                    {{ end }}
-                  </td>
-                </tr>
-              {{ end }}
-            {{ end }}
-            {{ if eq .TotalVulns 0 }}
-              <tr>
-                <td colspan="5" style="text-align:center; color:var(--success-color); padding: 1.5rem;">
-                  ✅ Taranan servislerde bilinen kritik CVE zafiyeti bulunamadı.
-                </td>
-              </tr>
-            {{ end }}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
     <!-- Web Findings -->
     <div class="section-card">
       <div class="section-header">
@@ -453,7 +389,7 @@
       </div>
     </div>
 
-    <!-- Extended Pentest Module Findings -->
+    <!-- Extended Module Findings -->
     {{ if .SslFindings }}
     <div class="section-card">
       <div class="section-header">
@@ -473,8 +409,62 @@
               <td><span class="code-tag">{{ .ExpiryDate }}</span></td>
               <td>{{ if .IsExpired }}<span class="badge badge-crit">SÜRESİ DOLMUŞ</span>{{ else }}<span class="badge badge-open">{{ .DaysUntilExpiry }} Gün</span>{{ end }}</td>
               <td>
-                {{ range .Notes }}<div style="font-size:0.78rem; color:var(--med-color)">⚠️ {{ . }}</div>{{ end }}
+                {{ range .Notes }}<div style="font-size:0.78rem; color:var(--med-color)">{{ . }}</div>{{ end }}
               </td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{ end }}
+
+    {{ if .HttpAuditFindings }}
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>🌐</span> HTTP Güvenlik Denetimi (Headers & CORS)</div>
+        <span class="section-badge">{{ len .HttpAuditFindings }} Bulgular</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>URL</th><th>Eksik Headerlar</th><th>Tehlikeli Metodlar</th><th>CORS / GraphQL</th><th>Şiddet</th></tr>
+          </thead>
+          <tbody>
+            {{ range .HttpAuditFindings }}
+            <tr>
+              <td><strong>{{ .URL }}</strong></td>
+              <td><small>{{ range .MissingHeaders }}<div>• {{ . }}</div>{{ else }}-{{ end }}</small></td>
+              <td><small>{{ range .DangerousMethods }}<span class="badge badge-high">{{ . }}</span> {{ else }}-{{ end }}</small></td>
+              <td><small>{{ range .CORSIssues }}<div>⚠️ {{ . }}</div>{{ else }}-{{ end }}</small></td>
+              <td><span class="badge badge-low">{{ .Severity }}</span></td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{ end }}
+
+    {{ if .SshAuditFindings }}
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title"><span>🔑</span> SSH Konfigürasyon Denetimi</div>
+        <span class="section-badge">{{ len .SshAuditFindings }} Bulgular</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>IP & Port</th><th>Banner</th><th>Zayıf Algoritmalar</th><th>Root Girişi</th><th>Şiddet</th></tr>
+          </thead>
+          <tbody>
+            {{ range .SshAuditFindings }}
+            <tr>
+              <td><strong>{{ .IP }}:{{ .Port }}</strong></td>
+              <td><span class="code-tag">{{ .Banner }}</span></td>
+              <td><small>{{ range .WeakAlgorithms }}<div>⚠️ {{ . }}</div>{{ else }}-{{ end }}</small></td>
+              <td>{{ if .RootLoginOn }}<span class="badge badge-crit">AÇIK</span>{{ else }}<span class="badge badge-open">KAPALI</span>{{ end }}</td>
+              <td><span class="badge badge-low">{{ .Severity }}</span></td>
             </tr>
             {{ end }}
           </tbody>

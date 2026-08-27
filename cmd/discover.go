@@ -23,7 +23,9 @@ var discoverCmd = &cobra.Command{
 		target := args[0]
 		core.PrintBanner(version)
 		core.EnsureOutputDir("output")
-		verifyScopePermission(target)
+		if !verifyScopePermission(target) {
+			return
+		}
 
 		timeout := time.Duration(discoverTimeoutFlag * float64(time.Second))
 		hosts, _ := modules.DiscoverHosts(target, nil, timeout, 50, discoverOutputFlag)

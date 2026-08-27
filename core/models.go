@@ -49,19 +49,6 @@ type ServiceDetail struct {
 	State              string                 `json:"state"`
 }
 
-// VulnerabilityInfo represents a matched CVE or security advisory.
-type VulnerabilityInfo struct {
-	CVEID           string   `json:"cve_id"`
-	CVSSScore       float64  `json:"cvss_score"`
-	Severity        string   `json:"severity"` // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
-	Description     string   `json:"description"`
-	AffectedService string   `json:"affected_service"`
-	AffectedVersion string   `json:"affected_version,omitempty"`
-	PublishedDate   string   `json:"published_date,omitempty"`
-	References      []string `json:"references"`
-	Mitigation      string   `json:"mitigation,omitempty"`
-}
-
 // DirFuzzFinding represents an identified web path or file.
 type DirFuzzFinding struct {
 	URL              string   `json:"url"`
@@ -126,28 +113,25 @@ type SshAuditFinding struct {
 
 // HostScanReport aggregates all findings for a single host.
 type HostScanReport struct {
-	Host            HostInfo            `json:"host"`
-	Ports           []PortInfo          `json:"ports"`
-	Services        []ServiceDetail     `json:"services"`
-	Vulnerabilities []VulnerabilityInfo `json:"vulnerabilities"`
-	DirFindings     []DirFuzzFinding    `json:"dir_findings"`
+	Host        HostInfo         `json:"host"`
+	Ports       []PortInfo       `json:"ports"`
+	Services    []ServiceDetail  `json:"services"`
+	DirFindings []DirFuzzFinding `json:"dir_findings"`
 }
 
 // CompleteScanReport represents the entire consolidated scan output.
 type CompleteScanReport struct {
-	ScanID            string           `json:"scan_id"`
-	Target            string           `json:"target"`
-	ScanDate          string           `json:"scan_date"`
-	ScanProfile       string           `json:"scan_profile,omitempty"` // basic, extended
-	DurationSeconds   float64          `json:"duration_seconds"`
-	DNSFindings       []DNSFinding     `json:"dns_findings,omitempty"`
-	TotalDNSRecords   int              `json:"total_dns_records"`
-	Hosts             []HostScanReport `json:"hosts"`
-	TotalHosts        int              `json:"total_hosts"`
-	TotalOpenPorts    int              `json:"total_open_ports"`
-	TotalVulns        int              `json:"total_vulns"`
-	TotalFindings     int              `json:"total_findings"`
-	SeverityBreakdown map[string]int   `json:"severity_breakdown"`
+	ScanID          string           `json:"scan_id"`
+	Target          string           `json:"target"`
+	ScanDate        string           `json:"scan_date"`
+	ScanProfile     string           `json:"scan_profile,omitempty"` // basic, extended
+	DurationSeconds float64          `json:"duration_seconds"`
+	DNSFindings     []DNSFinding     `json:"dns_findings,omitempty"`
+	TotalDNSRecords int              `json:"total_dns_records"`
+	Hosts           []HostScanReport `json:"hosts"`
+	TotalHosts      int              `json:"total_hosts"`
+	TotalOpenPorts  int              `json:"total_open_ports"`
+	TotalFindings   int              `json:"total_findings"`
 	// Pasif genişletilmiş modül bulguları
 	SslFindings       []SslFinding       `json:"ssl_findings,omitempty"`
 	HttpAuditFindings []HttpAuditFinding `json:"http_audit_findings,omitempty"`

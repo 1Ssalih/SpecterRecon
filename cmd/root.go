@@ -12,23 +12,35 @@ import (
 )
 
 var (
-	authorizedFlag bool
-	version        = "1.0.0"
+	authorizedFlag       bool
+	isInteractiveSession bool
+	version              = "1.0.0"
 )
 
 // RootCmd is the base command for SpecterRecon.
 var RootCmd = &cobra.Command{
 	Use:   "specter-recon",
-	Short: "SpecterRecon: Yüksek Performanslı Ağ Keşif (Recon) ve Zafiyet Analiz Motoru",
+	Short: "SpecterRecon: Yüksek Performanslı ve Modüler Ağ Keşif (Recon) Motoru",
 	Long: `SpecterRecon, siber güvenlik araştırmacıları ve sızma testi ekipleri için
 geliştirilmiş, yüksek eşzamanlılıklı (Goroutine), modüler ve tam pipeline destekli
-ağ keşif (reconnaissance) ve zafiyet analiz aracıdır.
+ağ keşif (reconnaissance) aracıdır.
 
-Çekirdek modüller: DNS Enumeration, Host Discovery, Port Scan, Banner Grabbing,
-CVE Matching ve Web Directory Fuzzing.
+Çekirdek modüller: DNS Enumeration, Host Discovery, Port Scan, Banner Grabbing
+ve Web Directory Fuzzing (Akıllı Wordlist / SecLists).
 
 Opsiyonel genişletilmiş modüller (--extended): SSL/TLS Audit, HTTP Security Audit,
 SSH Konfigürasyon Audit.`,
+	Example: `  # İnteraktif Shell konsoluna gir
+  specter-recon
+
+  # Hedef üzerinde tam keşif pipeline'ı çalıştır
+  specter-recon scan example.com --authorized
+
+  # Genişletilmiş audit modülleri ile çalıştır (SSL + HTTP + SSH)
+  specter-recon fullscan example.com --authorized
+
+  # SecLists ile derin web dizin taraması
+  specter-recon dirfuzz http://example.com --wordlist-size full --authorized`,
 	Run: func(cmd *cobra.Command, args []string) {
 		StartInteractiveShell(cmd)
 	},
@@ -45,9 +57,9 @@ func init() {
 	RootCmd.PersistentFlags().BoolVar(&authorizedFlag, "authorized", false, "Hedef için yasal tarama izninizin olduğunu onaylar")
 }
 
-func verifyScopePermission(target string) {
+func verifyScopePermission(target string) bool {
 	if authorizedFlag {
-		return
+		return true
 	}
 
 	pterm.Println()
@@ -62,6 +74,10 @@ func verifyScopePermission(target string) {
 
 	if answer != "e" && answer != "y" && answer != "evet" && answer != "yes" {
 		core.LogError("Kullanıcı izni onaylamadı. İşlem durduruldu.")
-		os.Exit(1)
+		if !isInteractiveSession {
+			os.Exit(1)
+		}
+		return false
 	}
+	return true
 }

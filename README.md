@@ -1,12 +1,11 @@
 <div align="center">
 
-# ⚡ SpecterRecon (v3.0.0 — Focused Recon Engine)
-### *Yüksek Performanslı, Eşzamanlı ve Modüler Ağ Keşif & Zafiyet Analiz Motoru*
+# ⚡ SpecterRecon (v3.0.0 — High Performance Recon Engine)
+### *Yüksek Performanslı, Eşzamanlı ve Modüler Ağ Keşif (Reconnaissance) Motoru*
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
 [![Concurrency](https://img.shields.io/badge/Concurrency-Goroutines%20%2B%20Worker%20Pools-00f2fe?style=for-the-badge&logo=fastapi&logoColor=black)](#)
 [![CLI Engine](https://img.shields.io/badge/CLI-Cobra%20%2B%20PTerm-9333EA?style=for-the-badge&logo=gnometerminal&logoColor=white)](#)
-[![NVD API & CVE Matcher](https://img.shields.io/badge/Vulnerabilities-NVD%20API%20v2%20%2B%20CVSS%20v3.1-ff3366?style=for-the-badge&logo=security&logoColor=white)](#)
 [![Wordlists](https://img.shields.io/badge/SecLists-Git%20Submodule-orange?style=for-the-badge&logo=github&logoColor=white)](#)
 [![Cross-Platform](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-success?style=for-the-badge&logo=linux&logoColor=white)](#)
 
@@ -19,11 +18,11 @@
   ___) | |_) |  __/ (__| ||  __/ |   |  _ <  __/ (_| (_) | | | |
  |____/| .__/ \___|\___|\__\___|_|   |_| \_\___|\___\___/|_| |_|
        |_|                                                     
-    -- Focused Recon & Vulnerability Scanner --   
+    -- High Performance Network Reconnaissance Engine --   
 ```
 
 <p align="center">
-  <b>SpecterRecon</b>, siber güvenlik araştırmacıları, sızma testi (pentest) uzmanları ve SOC/Red Team ekipleri için sıfırdan <b>Go (Golang)</b> dili ile geliştirilmiş; <b>DNS Keşfi, Host Tespiti, Port Tarama, Versiyon Çıkarımı, Zafiyet Eşleştirme ve Web Dizin Fuzzing</b> süreçlerini tek bir bağımsız binary içerisinde otomatikleştiren yüksek hızlı ağ keşif motorudur.
+  <b>SpecterRecon</b>, siber güvenlik araştırmacıları, sızma testi (pentest) uzmanları ve SOC/Red Team ekipleri için sıfırdan <b>Go (Golang)</b> dili ile geliştirilmiş; <b>DNS Keşfi, Host Tespiti, Port Tarama, Temiz Banner & Versiyon Çıkarımı, Akıllı Web Dizin Fuzzing ve Pasif Genişletilmiş Denetim (SSL/HTTP/SSH)</b> süreçlerini tek bir bağımsız binary içerisinde otomatikleştiren yüksek hızlı ağ keşif motorudur.
 </p>
 
 ---
@@ -50,25 +49,25 @@
 
 ## 🎯 1. Projenin Amacı ve Vizyonu
 
-Geleneksel güvenlik araçları (Nmap, Nikto, Dirb vb.) genellikle ayrı ayrı çalıştırılmayı, karmaşık komut dizilimlerini veya Python runtime/bağımlılık yüklerini gerektirir. Ayrıca sızma testlerinde gürültü çıkaran, izinsiz erişim veya varsayılan şifre denemesi yapan saldırı araçları yasal ve etik riskler doğurur.
+Geleneksel güvenlik araçları (Nmap, Nikto, Dirb vb.) genellikle ayrı ayrı çalıştırılmayı, karmaşık komut dizilimlerini veya Python runtime/bağımlılık yüklerini gerektirir. Ayrıca sızma testlerinde gürültü çıkaran, izinsiz erişim veya varsayılan şifre denemesi yapan saldırı araçları yasal ve operasyonel riskler doğurur.
 
 **SpecterRecon'un Varoluş Amacı:**
-1. **Saf Keşif (Reconnaissance) Odağı:** Sistemi izinsiz erişim denemeleri (brute-force, exploit, credential testing) ile riske atmadan; yalnızca sistem, port, servis, zafiyet ve web dizin bilgilerini **pasif/deterministik yöntemlerle toplamak**.
+1. **Saf Keşif (Reconnaissance) Odağı:** Sistemi izinsiz erişim denemeleri (brute-force, exploit, credential testing) ile riske atmadan; sistem, port, servis, banner ve web dizin bilgilerini **pasif/deterministik ve yüksek doğruluklu yöntemlerle toplamak**.
 2. **Sıfır Bağımlılık (Zero-Dependency):** Python, Java veya harici kütüphane gerektirmeyen, Windows, Linux ve macOS üzerinde tek bir `specter-recon.exe` olarak çalışan **bağımsız (standalone) Go binary'si sunmak**.
-3. **Otomatik Boru Hattı (Pipeline):** DNS enumeration'dan başlayan, bulunan IP'leri host keşfine, açık portları versiyon analizine ve web servislerini otomatik dizin fuzzer'ına besleyen **modüler veri akışı sağlamak**.
-4. **Etik ve Yasal Guardrail:** Her tarama öncesinde yasal izin `--authorized` kontrolü veya interaktif konsolda yetki teyidi isteyerek yetkisiz kullanım riskini engellemek.
+3. **Otomatik Boru Hattı (Pipeline):** DNS enumeration'dan başlayan, bulunan IP'leri host keşfine, açık portları versiyon/banner analizine ve web servislerini otomatik dizin fuzzer'ına besleyen **modüler veri akışı sağlamak**.
+4. **Etik ve Yasal Guardrail:** Her hedef için yasal izin `--authorized` kontrolü veya interaktif konsolda hedef bazlı yetki teyidi isteyerek yetkisiz kullanım riskini engellemek.
 
 ---
 
 ## ✨ 2. Öne Çıkan Özellikler
 
 * **🚀 Yüksek Eşzamanlılık (Goroutine Worker Pools):** Ağ soket işlemleri ve port taramaları binlerce eşzamanlı Goroutine ile saniyeler içinde tamamlanır.
-* **🎯 Akıllı Servis-Wordlist Eşleştirmesi:** Banner analizi sonucunda hedefte çalışan teknoloji (WordPress, Jenkins, Apache vb.) tespit edilir ve `service_wordlist_map.yaml` üzerinden hedefe özel en uygun wordlist otomatik seçilir.
+* **🧹 Temiz ve İkili-Arındırılmış Banner Çıkarımı:** HTTP, SSH, FTP, SMTP, MySQL/MariaDB gibi servislerden ham ikili çöpleri ayıklar; MySQL handshake paketini ikili düzeyde ayrıştırarak temiz versiyon bilgisi sunar.
+* **🎯 Akıllı Servis-Wordlist Eşleştirmesi:** Banner analizi sonucunda hedefte çalışan teknoloji (IIS, Nginx, Apache, Tomcat, Jenkins, WordPress, Drupal, Joomla, Spring Boot vb.) tespit edilir ve `service_wordlist_map.yaml` üzerinden hedefe özel en uygun wordlist otomatik seçilir.
 * **📚 SecLists Entegrasyonu (Git Submodule):** Siber güvenlik dünyasının standart wordlist deposu olan SecLists, projeye `git submodule` olarak entegre edilmiştir. `--wordlist-size quick|full` bayrağı ile hızlı veya derin tarama seçilebilir.
-* **🛡️ Resmi NVD REST API v2 Zafiyet Motoru:** Tespit edilen servis ve versiyonlar NIST NVD veritabanıyla eşleştirilerek resmi CVE kodları, CVSS v3.1 puanları ve zafiyet özetleri çıkarılır.
-* **🔒 İzinli/Etik Guardrail Güvenlik Kontrolü:** İzinsiz taramaları önlemek amacıyla `--authorized` doğrulaması veya interaktif shell modunda tek seferlik izin teyidi zorunludur.
+* **🔒 İzinli/Etik Guardrail Güvenlik Kontrolü:** İzinsiz taramaları önlemek amacıyla her hedef için `--authorized` doğrulaması veya interaktif shell modunda hedef bazlı izin teyidi zorunludur.
 * **💻 İnteraktif Metasploit-Style Konsol Modu:** Program parametresiz çalıştırıldığında CLI oturumu başlatılır, sürekli `.exe` adı yazma zorunluluğu ortadan kalkar.
-* **📊 Çoklu Raporlama Formats:** Sonuçlar anlık terminal içi renkli PTerm tablolarında, tek bir metin özetinde (`summary.txt`) ve modern SOC tarzı HTML raporunda (`report.html`) sunulur.
+* **📊 Çoklu Raporlama Formatı:** Sonuçlar anlık terminal içi renkli PTerm tablolarında, tek bir metin özetinde (`summary.txt`) ve modern SOC tarzı HTML raporunda (`report.html`) sunulur.
 
 ---
 
@@ -79,8 +78,7 @@ Geleneksel güvenlik araçları (Nmap, Nikto, Dirb vb.) genellikle ayrı ayrı �
 | **Programlama Dili** | `Go (Golang) 1.21+` | Derlenmiş native hız, düşük RAM/CPU kullanımı, cross-platform derleme. |
 | **CLI Motoru** | `github.com/spf13/cobra` | Komut, alt komut, flag yönetimi ve `--help` dokümantasyonu. |
 | **Terminal UI** | `github.com/pterm/pterm` | Canlı kutulu tablolar, renkli log seviyeleri ve açılış banner'ı. |
-| **Yapılandırma** | `gopkg.in/yaml.v3` | `service_wordlist_map.yaml` okuma ve wordlist haritalama. |
-| **Zafiyet Verileri** | `NIST NVD REST API v2` | CVE ve CVSS puanlarının dinamik sorgulanması. |
+| **Yapılandırma** | `gopkg.in/yaml.v3` | `service_wordlist_map.yaml` okuma ve `quick`/`full` wordlist haritalama. |
 | **Wordlist Deposu** | `danielmiessler/SecLists` | Submodule olarak entegre edilmiş kapsamlı dizin ve subdomain listeleri. |
 | **Rapor Şablonu** | `html/template` | XSS korumalı, CSS Glassmorphism tasarımlı SOC raporu. |
 
@@ -88,7 +86,7 @@ Geleneksel güvenlik araçları (Nmap, Nikto, Dirb vb.) genellikle ayrı ayrı �
 
 ## 🔄 4. Çalışma Prensibi ve Pipeline Mimarisi
 
-SpecterRecon bir hedef aldığında (Domain, IP veya CIDR), veriyi otomatik olarak bir sonraki aşamaya ileten **6 adımlı boru hattını (pipeline)** çalıştırır:
+SpecterRecon bir hedef aldığında (Domain, IP veya CIDR), veriyi otomatik olarak bir sonraki aşamaya ileten **modüler boru hattını (pipeline)** çalıştırır:
 
 ```mermaid
 flowchart TD
@@ -98,17 +96,15 @@ flowchart TD
     
     STEP0 -->|ip_list.json| STEP1[🔍 Adım 1: Canlı Host Keşfi ARP / ICMP / TCP Ping]
     STEP1 -->|hosts.json| STEP2[🔌 Adım 2: Goroutine Worker Pool Port Scan]
-    STEP2 -->|ports.json| STEP3[🏷️ Adım 3: Banner Grabbing & Versiyon Tespiti]
-    STEP3 -->|services.json| STEP4[🛡️ Adım 4: NVD API v2 CVE Zafiyet Eşleştirici]
-    STEP3 -->|HTTP/HTTPS Servisleri| STEP5[📂 Adım 5: Akıllı Wordlist ile Web Dizin Fuzzing]
+    STEP2 -->|ports.json| STEP3[🏷️ Adım 3: Banner Grabbing & Protokol Ayrıştırma]
+    STEP3 -->|HTTP/HTTPS Servisleri| STEP4[📂 Adım 4: Akıllı Wordlist / SecLists Web Fuzzing]
     
     STEP3 -->|--extended Flag Verildiğinde| EXT[🔒 Pasif Genişletilmiş Modüller]
     EXT --> EXT1[SSL/TLS Sertifika & Zayıf Protokol Audit]
     EXT --> EXT2[HTTP Security Headers & CORS Audit]
     EXT --> EXT3[SSH Algoritma & Konfigürasyon Audit]
     
-    STEP4 -->|vulns.json| REPORT[📊 Adım 6: Raporlama Motoru]
-    STEP5 -->|dirs.json| REPORT
+    STEP4 -->|dirs.json| REPORT[📊 Adım 5: Raporlama Motoru]
     EXT1 --> REPORT
     EXT2 --> REPORT
     EXT3 --> REPORT
@@ -128,10 +124,10 @@ Cyber-Security/
 ├── go.mod                        # Go modül bağımlılık tanımı (Go 1.21+)
 ├── config.yaml                   # Tarama, zaman aşımı ve varsayılan port ayarları
 ├── README.md                     # Proje ana dokümantasyonu
-├── specterrecon-inceleme.md      # Kod inceleme ve doğrulama raporu
+├── specterrecon-inceleme.md      # Kod inceleme ve mimari raporu
 │
 ├── cmd/                          # Cobra CLI komut katmanı
-│   ├── root.go                   # Kök komut ve izin teyidi doğrulaması
+│   ├── root.go                   # Kök komut ve hedef bazlı izin teyidi doğrulaması
 │   ├── scan.go                   # Ana recon pipeline komutu (--extended desteği)
 │   ├── fullscan.go               # scan --extended kısayolu
 │   ├── shell.go                  # İnteraktif Metasploit-style konsol modu
@@ -139,13 +135,12 @@ Cyber-Security/
 │   ├── discover.go               # Bağımsız Host keşif komutu
 │   ├── portscan.go               # Bağımsız Port tarama komutu
 │   ├── banner.go                 # Bağımsız Banner grabbing & versiyon komutu
-│   ├── vuln.go                   # Bağımsız CVE zafiyet eşleştirme komutu
-│   ├── dirfuzz.go                # Bağımsız Web Dizin fuzzer komutu (--service desteği)
+│   ├── dirfuzz.go                # Bağımsız Web Dizin fuzzer komutu (--service & auto-probe)
 │   ├── ssl.go                    # Bağımsız SSL/TLS audit komutu
 │   └── report.go                 # JSON çıktılarından HTML/TXT rapor üretme komutu
 │
 ├── core/                         # Çekirdek veri modelleri ve yardımcılar
-│   ├── models.go                 # Tüm Go struct şemaları (HostInfo, ServiceDetail, Vuln vb.)
+│   ├── models.go                 # Go struct şemaları (HostInfo, ServiceDetail, SslFinding vb.)
 │   ├── storage.go                # JSON kaydetme/okuma ve SaveSummaryTxt yazıcısı
 │   └── logger.go                 # PTerm konsol logları, renkli çıktılar ve canlı tablolar
 │
@@ -153,10 +148,9 @@ Cyber-Security/
 │   ├── dns_enum.go               # DNS çözümleme & Subdomain brute-force motoru
 │   ├── discovery.go              # ARP, ICMP ve TCP SYN ping ile canlı host keşfi
 │   ├── portscan.go               # Goroutine Worker Pool TCP Connect tarayıcısı
-│   ├── banner.go                 # HTTP/HTTPS & Raw Socket banner grabbing ve Regex eşleştirici
-│   ├── vulnmatch.go              # NVD REST API v2 ve çevrimdışı CVE eşleştirici
+│   ├── banner.go                 # HTTP/HTTPS, Raw Socket ve ikili MySQL handshake ayrıştırıcı
 │   ├── dirfuzz.go                # Akıllı servise özel wordlist seçicili Web Fuzzer
-│   ├── ssl_tls.go                # SSL/TLS sertifika süresi, zayıf şifre ve protokol denetleyici
+│   ├── ssl_tls.go                # SSL/TLS SNI, sertifika süresi ve protokol denetleyici
 │   ├── http_audit.go             # HTTP Security Headers, CORS, GraphQL ve yöntem denetleyici
 │   ├── ssh_audit.go              # SSH algoritma, banner ve root login denetleyici
 │   ├── report.go                 # HTML Rapor oluşturucu motor
@@ -172,7 +166,7 @@ Cyber-Security/
     ├── wordpress.txt             # WordPress eklenti/tema yolları
     ├── sensitive.txt             # Hassas dosya listesi (.env, .git, config vb.)
     ├── subdomains.txt            # Subdomain brute-force listesi
-    ├── service_wordlist_map.yaml # Servis ➔ Wordlist eşleştirme haritası
+    ├── service_wordlist_map.yaml # Servis ➔ Wordlist eşleştirme haritası (Quick & Full)
     └── SecLists/                 # SecLists git submodule (Full mod kapsamlı listeler)
 ```
 
@@ -231,7 +225,7 @@ specter-recon > exit
 ### 📡 Tam Recon Pipeline Taraması (`scan` & `fullscan`)
 
 ```bash
-# 1. Temel Recon Taraması (DNS + Discovery + Port + Banner + CVE + DirFuzz)
+# 1. Temel Recon Taraması (DNS + Discovery + Port + Banner + DirFuzz)
 .\specter-recon.exe scan example.com --authorized
 
 # 2. Subdomain Brute-Force Dahil Tarama
@@ -269,11 +263,8 @@ Pipeline haricinde modülleri tek başına da çalıştırabilirsiniz:
 # 🏷️ Banner Grabbing
 .\specter-recon.exe banner -i output/ports.json -o output/services.json --authorized
 
-# 🛡️ CVE Zafiyet Eşleştirme
-.\specter-recon.exe vuln -i output/services.json --authorized
-
-# 📂 Akıllı Web Dizin Fuzzing (Servis Belirterek)
-.\specter-recon.exe dirfuzz http://192.168.1.10:8080 --service jenkins --authorized
+# 📂 Akıllı Web Dizin Fuzzing (Otomatik Servis Tespiti veya Belirterek)
+.\specter-recon.exe dirfuzz http://192.168.1.10:8080 --service jenkins --wordlist-size full --authorized
 
 # 🔒 SSL/TLS Sertifika & Protokol Audit
 .\specter-recon.exe ssl example.com:443
@@ -289,14 +280,14 @@ Pipeline haricinde modülleri tek başına da çalıştırabilirsiniz:
 Tarama tamamlandığında `output/` dizininde otomatik olarak iki temel rapor üretilir:
 
 ### 1. `output/summary.txt` (Metin Taraması Özeti)
-Tüm hostlar, açık portlar, versiyonlar, bulunan zafiyetler ve hassas dizinler insan-okunabilir tek bir özet dosyasında birleştirilir.
+Tüm hostlar, açık portlar, versiyonlar, web dizin bulguları ve SSL/HTTP/SSH denetim sonuçları insan-okunabilir tek bir özet dosyasında birleştirilir.
 
 ### 2. `output/report.html` (Modern SOC Güvenlik Dashboard'u)
 XSS korumalı, Glassmorphism CSS temalı, filtrelenebilir ve yazdırmaya uygun görsel güvenlik raporu:
 
-* **Özet Metrik Kartları:** Toplam Host, Açık Port, Zafiyet ve Dizin sayıları.
-* **CVSS Şiddet Dağılımı:** CRITICAL, HIGH, MEDIUM, LOW zafiyet rozetleri.
-* **Bulgu Tabloları:** Zafiyetlerin CVE ID'leri, etkilenen servisler ve resmi açıklamaları.
+* **Özet Metrik Kartları:** Toplam DNS Kaydı, Keşfedilen Host, Açık Port ve Web Bulgu sayıları.
+* **Detaylı Servis Tabloları:** Port, protokol, servis adı, versiyon ve arındırılmış banner detayları.
+* **Genişletilmiş Denetimler:** SSL/TLS sertifika geçerliliği, HTTP güvenlik başlıkları ve SSH konfigürasyon bulguları.
 
 ---
 

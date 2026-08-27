@@ -1,16 +1,43 @@
 # SpecterRecon Servis -> Wordlist Eşleştirme Yapılandırması
 # Banner analizi sonucunda tespit edilen teknolojiye göre özel wordlist seçilir.
-# --wordlist-size quick modunda küçük yerleşik listeler, full modunda SecLists kullanılır.
+# --wordlist-size quick modunda küçük/hızlı listeler, full modunda SecLists kullanılır.
 
-# Quick mod (küçük yerleşik listeler)
-jenkins: "wordlists/jenkins.txt"
-apache: "wordlists/apache.txt"
-wordpress: "wordlists/wordpress.txt"
-default: "wordlists/common.txt"
+# Quick mod (hafif / hızlı tarama listeleri)
+quick:
+  jenkins: "wordlists/jenkins.txt"
+  apache: "wordlists/apache.txt"
+  wordpress: "wordlists/wordpress.txt"
+  iis: "wordlists/SecLists/Discovery/Web-Content/Web-Servers/IIS.txt"
+  nginx: "wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt"
+  tomcat: "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache-Tomcat.txt"
+  drupal: "wordlists/SecLists/Discovery/Web-Content/CMS/Drupal.txt"
+  joomla: "wordlists/SecLists/Discovery/Web-Content/CMS/joomla-plugins.fuzz.txt"
+  springboot: "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/Java-Spring-Boot.txt"
+  php: "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/PHP.fuzz.txt"
+  aspnet: "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/ASP.NET/CommonBackdoors-ASP.fuzz.txt"
+  gitlab: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/GitLab.txt"
+  grafana: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Grafana.txt"
+  elasticsearch: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Elasticsearch-Kibana.txt"
+  swagger: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Swagger.txt"
+  default: "wordlists/common.txt"
 
-# Full mod (SecLists) — --wordlist-size full ile aktif olur
-# Bu yollar SecLists git submodule yapısına göre ayarlanmıştır.
-# jenkins_full: "wordlists/SecLists/Discovery/Web-Content/CMS/Jenkins.fuzz.txt"
-# apache_full: "wordlists/SecLists/Discovery/Web-Content/Apache.fuzz.txt"
-# wordpress_full: "wordlists/SecLists/Discovery/Web-Content/CMS/wordpress.fuzz.txt"
-# default_full: "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt"
+# Full mod (SecLists kapsamlı listeleri) — --wordlist-size full ile aktif olur
+full:
+  jenkins: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Jenkins-Hudson.txt"
+  apache: "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache.txt"
+  iis: "wordlists/SecLists/Discovery/Web-Content/Web-Servers/IIS.txt"
+  nginx: "wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt"
+  tomcat: "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache-Tomcat.txt"
+  wordpress: "wordlists/SecLists/Discovery/Web-Content/CMS/wordpress.fuzz.txt"
+  drupal: "wordlists/SecLists/Discovery/Web-Content/CMS/Drupal.txt"
+  joomla: "wordlists/SecLists/Discovery/Web-Content/CMS/joomla-plugins.fuzz.txt"
+  sharepoint: "wordlists/SecLists/Discovery/Web-Content/CMS/Sharepoint-Ennumeration.txt"
+  springboot: "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/Java-Spring-Boot.txt"
+  php: "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/PHP.fuzz.txt"
+  aspnet: "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/ASP.NET/CommonBackdoors-ASP.fuzz.txt"
+  gitlab: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/GitLab.txt"
+  grafana: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Grafana.txt"
+  elasticsearch: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Elasticsearch-Kibana.txt"
+  swagger: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Swagger.txt"
+  default: "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt"
+

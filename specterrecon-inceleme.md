@@ -116,18 +116,51 @@ Toplamda proje **14 ayrı komut** (`scan`, `fullscan`, `dns`, `discover`, `ports
 |---|---|---|---|
 | 1 | `authorizedFlag = true` satırını `cmd/shell.go`'dan kaldır, shell'de her komuttan önce izin sorusu sorulacak şekilde yeniden yaz | 🔴 Kritik | `cmd/shell.go` |
 | 2 | Aktif deneme/exploitation modüllerini tamamen kaldır (bkz. yukarıdaki "Silinecek Dosyalar" listesi) | 🔴 Kritik | 10 modül + 2 cmd dosyası |
-| 3 | SecLists'i gerçek git submodule olarak ekle, `service_wordlist_map.yaml`'ı gerçek yol yapısına güncelle | 🔴 Kritik | `wordlists/`, `.gitmodules`, `service_wordlist_map.yaml` |
-| 4 | Bağımsız `dirfuzz` komutuna da akıllı wordlist seçimini bağla (`--service` flag'i veya otomatik tespit ile) | 🟡 Orta | `cmd/dirfuzz.go` |
-| 5 | `--profile` sistemini tamamen kaldır, `scan` komutunu temel pipeline + opsiyonel `--extended` (ssl/ssh/http audit) şeklinde sadeleştir | 🟡 Orta | `cmd/scan.go`, `cmd/fullscan.go` |
-| 6 | `core/models.go`, `core/storage.go`, `core/logger.go`, `modules/report.go`, `templates/report.html.tmpl` içindeki kaldırılan modüllere ait struct/fonksiyon/HTML bloklarını temizle | 🟡 Orta | ilgili dosyalar |
-| 7 | `modules/modules_test.go`'dan kaldırılan modüllere ait testleri sil | 🟡 Orta | `modules/modules_test.go` |
-| 8 | README'yi gerçek (recon-odaklı) kapsamı yansıtacak şekilde sadeleştir | 🟡 Orta | `README.md` |
-| 9 | `GrabRawSocketBanner`'daki FTP/SMTP probe karışıklığını düzelt (FTP'ye `EHLO` yerine boş bırak ya da `SYST`) | 🟢 Düşük | `modules/banner.go` |
-| 10 | MySQL/MariaDB versiyon regex'ini binary protokolü hesaba katacak şekilde iyileştir | 🟢 Düşük | `modules/banner.go` |
-| 11 | Her komuta `Example:` alanı ekle (cobra'nın help çıktısında örnek kullanım gösterir) | 🟢 Düşük | tüm `cmd/*.go` |
-| 12 | `gofmt -w .` çalıştırıp formatlama uyarılarını temizle | 🟢 Düşük | listelenen 8 dosya |
-| 13 | Kendi makinende `go build ./...` çalıştırıp tam derleme hatası olup olmadığını doğrula (sandbox'ta ağ kısıtı nedeniyle tam test edilemedi) | 🟢 Düşük | tüm proje |
-| 14 | Plan dosyalarındaki (`proje-plani.md`) alan isimlerini kodla tutarlı hale getir ya da kodu plana göre güncelle | 🟢 Düşük | `proje-plani.md`, `core/models.go` |
+| 3 | **CVE/zafiyet eşleştirme modülünü tamamen kaldır** — kullanıcı hiç istemiyor, üstelik gerçek testte false positive (Opera/IIS karışıklığı) ürettiği kanıtlandı | 🔴 Kritik | `modules/vulnmatch.go`, `cmd/vuln.go`, `cmd/scan.go`, `core/models.go` |
+| 4 | SecLists'i gerçek git submodule olarak ekle, `service_wordlist_map.yaml`'ı gerçek yol yapısına ve daha fazla servise (iis, nginx, tomcat vb.) genişleterek güncelle | 🔴 Kritik | `wordlists/`, `.gitmodules`, `service_wordlist_map.yaml` |
+| 5 | `--wordlist-size full` flag'ini gerçekten işlevsel hale getir — şu an hiçbir şey yapmıyor (kanıt: iki farklı taramada kelime sayısı birebir aynı çıktı) | 🔴 Kritik | `cmd/scan.go`, `modules/dirfuzz.go` |
+| 6 | Banner metinlerini ekrana/dosyaya yazmadan önce yazdırılamayan (non-printable) byte'lardan temizle | 🟡 Orta | `modules/banner.go`, `core/logger.go` |
+| 7 | MySQL/MariaDB banner tespitini binary protokolü doğru parse edecek şekilde düzelt (şu an anlamsız versiyon üretiyor) | 🟡 Orta | `modules/banner.go` |
+| 8 | SSL/TLS modülünün neden sonuç tablosu basmadığını araştır ve düzelt | 🟡 Orta | `modules/ssl_tls.go`, `core/logger.go` |
+| 9 | Bağımsız `dirfuzz` komutuna da akıllı wordlist seçimini bağla (`--service` flag'i veya otomatik tespit ile) | 🟡 Orta | `cmd/dirfuzz.go` |
+| 10 | `--profile` sistemini tamamen kaldır, `scan` komutunu temel pipeline + opsiyonel `--extended` (ssl/ssh/http audit) şeklinde sadeleştir | 🟡 Orta | `cmd/scan.go`, `cmd/fullscan.go` |
+| 11 | `core/models.go`, `core/storage.go`, `core/logger.go`, `modules/report.go`, `templates/report.html.tmpl` içindeki kaldırılan modüllere ait struct/fonksiyon/HTML bloklarını temizle | 🟡 Orta | ilgili dosyalar |
+| 12 | `modules/modules_test.go`'dan kaldırılan modüllere ait testleri sil | 🟡 Orta | `modules/modules_test.go` |
+| 13 | README'yi gerçek (recon-odaklı, CVE'siz) kapsamı yansıtacak şekilde sadeleştir | 🟡 Orta | `README.md` |
+| 14 | `GrabRawSocketBanner`'daki FTP/SMTP probe karışıklığını düzelt (FTP'ye `EHLO` yerine boş bırak ya da `SYST`) | 🟢 Düşük | `modules/banner.go` |
+| 15 | Her komuta `Example:` alanı ekle (cobra'nın help çıktısında örnek kullanım gösterir) | 🟢 Düşük | tüm `cmd/*.go` |
+| 16 | `gofmt -w .` çalıştırıp formatlama uyarılarını temizle | 🟢 Düşük | listelenen 8 dosya |
+| 17 | Kendi makinende `go build ./...` çalıştırıp tam derleme hatası olup olmadığını doğrula (sandbox'ta ağ kısıtı nedeniyle tam test edilemedi) | 🟢 Düşük | tüm proje |
+| 18 | Plan dosyalarındaki (`proje-plani.md`) alan isimlerini kodla tutarlı hale getir ya da kodu plana göre güncelle | 🟢 Düşük | `proje-plani.md`, `core/models.go` |
+
+---
+
+## 🔴 GERÇEK ÇIKTI İLE DOĞRULANAN EK SORUNLAR (kullanıcı test logundan)
+
+Kullanıcı `milsoft.com.tr` hedefine karşı gerçek bir `fullscan` ve `scan --wordlist-size full` çalıştırdı. Çıktı, önceki kod incelemesindeki şüpheleri **somut olarak doğruladı** ve yeni sorunlar ortaya çıkardı:
+
+### CVE Eşleştirme — Kullanıcının hiç istemediği bir özellik, üstelik yanlış çalışıyor
+CVE modülü kullanıcının orijinal isteğinde yoktu (asistan tarafından "eklenebilir özellik" olarak plana dahil edilmişti, kullanıcı fark etmemişti). Gerçek testte de **açık bir false positive** üretti:
+```
+CVE-2005-3059 [CRITICAL - CVSS: 10.0] -> http (10.0.0.100:80)
+"Multiple unspecified vulnerabilities in Opera 8.50 on Linux..."
+```
+Hedefte gerçekte **Microsoft IIS 8.5** çalışıyor. NVD keyword araması `"http 8.5"` yaparken versiyon numarası "8.5" **Opera tarayıcısının 8.50 sürümüyle** tesadüfen eşleşmiş ve tamamen alakasız kritik bir zafiyet rapor edilmiş. **Karar: CVE modülü tamamen kaldırılacak** (hem istenmiyor hem hatalı).
+
+### `--wordlist-size full` Flag'i Sahte / Hiçbir Şey Yapmıyor
+İki ayrı taramada (flag'siz varsayılan ve `--wordlist-size full` ile) aynı hedefe karşı üretilen kelime sayısı **birebir aynı: 143**. Yani "full = SecLists kullanılacak" diyen help metni yalan söylüyor — flag kod tarafında gerçek bir değişiklik yapmıyor. Bu, kullanıcının en başından beri şüphelendiği "SecList kıyası çalışmıyor" hissinin doğrudan kanıtı.
+
+### Akıllı Servis-Wordlist Eşleştirmesi Pratikte Devre Dışı
+Port 80'de banner grab "Microsoft IIS" tespit etmesine rağmen seçilen wordlist yine `common.txt (default)` kalmış. Sebep: `service_wordlist_map.yaml`'da `iis` anahtarı hiç tanımlı değil (sadece jenkins/apache/wordpress/default var), kodun öncelik listesinde "iis" geçse de karşılığında gerçek bir dosya yok. Gerçek dünyada karşılaşılan servislerin (IIS, nginx, Tomcat vb.) çoğu için hâlâ eşleşme yapılamıyor.
+
+### Banner Metinleri Bozuk Karakterlerle Basılıyor
+NetBIOS ve MySQL servislerinin banner'ları tabloya `��`, `Z�`, `�␦` gibi yazdırılamayan byte'larla basılmış — binary protokol verisi ekrana/dosyaya yazılmadan önce filtrelenmiyor.
+
+### MySQL Versiyon Tespiti Muhtemelen Hatalı
+`mysql v5.0.0319` gibi gerçekçi olmayan bir versiyon üretilmiş (gerçek MySQL versiyonları `5.7.32` formatında olur). Bu, binary MySQL handshake paketinden regex'in yanlış bir sayı dizisi yakalamasından kaynaklanıyor — bu hatalı veri sonra CVE eşleştirmeye beslenip sahte bir "CRITICAL CVSS 9.8" sonucu daha üretmiş.
+
+### SSL/TLS Modülü Sessiz Kalıyor
+"1 TLS servisi" bulunduğu loglanmış ama hiçbir sonuç tablosu basılmamış — modül ya bir şey bulamıyor ya da bulduğunu göstermiyor, kod tarafında incelenmeli.
 
 ---
 

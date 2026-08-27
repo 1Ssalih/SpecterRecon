@@ -28,7 +28,9 @@ var bannerCmd = &cobra.Command{
 		}
 		// Banner grabbing yetkili tarama gerektiriyor
 		if len(ports) > 0 {
-			verifyScopePermission(ports[0].IP)
+			if !verifyScopePermission(ports[0].IP) {
+				return
+			}
 		}
 
 		services, _ := modules.GrabBannersAndServices(ports, 30, 3500*time.Millisecond, bannerOutputFlag)

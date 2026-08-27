@@ -122,24 +122,6 @@ func LoadServices(path string) ([]ServiceDetail, error) {
 	return services, err
 }
 
-// SaveVulns writes vulnerabilities slice to JSON.
-func SaveVulns(vulns []VulnerabilityInfo, path string) error {
-	if path == "" {
-		path = "output/vulns.json"
-	}
-	return SaveJSON(vulns, path)
-}
-
-// LoadVulns reads vulnerabilities slice from JSON.
-func LoadVulns(path string) ([]VulnerabilityInfo, error) {
-	if path == "" {
-		path = "output/vulns.json"
-	}
-	var vulns []VulnerabilityInfo
-	err := LoadJSON(path, &vulns)
-	return vulns, err
-}
-
 // SaveFindings writes findings to JSON and plain text.
 func SaveFindings(findings []DirFuzzFinding, jsonPath, txtPath string) error {
 	if jsonPath == "" {
@@ -205,7 +187,6 @@ func SaveSummaryTxt(
 	hosts []HostInfo,
 	ports []PortInfo,
 	services []ServiceDetail,
-	vulns []VulnerabilityInfo,
 	findings []DirFuzzFinding,
 	durationSec float64,
 	outPath string,
@@ -284,16 +265,6 @@ func SaveSummaryTxt(
 	}
 	w("")
 
-	// Zafiyetler
-	w("[ZAFİYETLER] (%d)", len(vulns))
-	if len(vulns) == 0 {
-		w("  (kritik zafiyet bulunamadı)")
-	}
-	for _, v := range vulns {
-		w("  !! [%s / CVSS:%.1f] %s -> %s", v.Severity, v.CVSSScore, v.CVEID, v.AffectedService)
-	}
-	w("")
-
 	// Web Dizin Bulguları
 	w("[WEB BULGULARI] (%d)", len(findings))
 	if len(findings) == 0 {
@@ -360,12 +331,6 @@ func SaveSummaryTxt(
 	}
 
 	// Özet sayaçları
-	critCount := 0
-	for _, v := range vulns {
-		if v.Severity == "CRITICAL" || v.Severity == "HIGH" {
-			critCount++
-		}
-	}
 	sensitiveCount := 0
 	for _, fi := range findings {
 		if fi.IsSensitive {
@@ -376,7 +341,6 @@ func SaveSummaryTxt(
 	w("=== ÖZET ===")
 	w("  Hostlar        : %d", len(hosts))
 	w("  Açık Portlar   : %d", len(ports))
-	w("  Zafiyetler     : %d toplam (%d kritik/yüksek)", len(vulns), critCount)
 	w("  Web Bulguları  : %d toplam (%d hassas dosya)", len(findings), sensitiveCount)
 	w("  Rapor          : output/report.html")
 	w("  Süre           : %.2f saniye", durationSec)

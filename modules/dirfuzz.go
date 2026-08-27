@@ -20,39 +20,80 @@ import (
 
 var SensitiveKeywords = []string{".env", ".git", ".bak", "config", "backup", "sql", "id_rsa", "password", "secret", "private"}
 
-// LoadServiceWordlistMap loads the service-to-wordlist configuration map.
-func LoadServiceWordlistMap(mapFile string) map[string]string {
-	result := map[string]string{
-		"jenkins":   "wordlists/jenkins.txt",
-		"apache":    "wordlists/apache.txt",
-		"wordpress": "wordlists/wordpress.txt",
-		"default":   "wordlists/common.txt",
-	}
+type WordlistConfigFile struct {
+	Quick map[string]string `yaml:"quick"`
+	Full  map[string]string `yaml:"full"`
+}
 
+// LoadServiceWordlistMap loads the service-to-wordlist configuration map for the specified sizeMode ("quick" or "full").
+func LoadServiceWordlistMap(mapFile, sizeMode string) map[string]string {
 	if mapFile == "" {
 		mapFile = "wordlists/service_wordlist_map.yaml"
 	}
+	if sizeMode == "" {
+		sizeMode = "quick"
+	}
 
+	result := make(map[string]string)
 	data, err := os.ReadFile(mapFile)
 	if err == nil {
-		var yamlMap map[string]string
-		if err := yaml.Unmarshal(data, &yamlMap); err == nil && len(yamlMap) > 0 {
-			for k, v := range yamlMap {
-				result[strings.ToLower(k)] = v
+		var cfg WordlistConfigFile
+		if err := yaml.Unmarshal(data, &cfg); err == nil && (len(cfg.Quick) > 0 || len(cfg.Full) > 0) {
+			if strings.ToLower(sizeMode) == "full" && len(cfg.Full) > 0 {
+				for k, v := range cfg.Full {
+					result[strings.ToLower(k)] = v
+				}
+			} else {
+				for k, v := range cfg.Quick {
+					result[strings.ToLower(k)] = v
+				}
+			}
+		} else {
+			// Flat map fallback
+			var flatMap map[string]string
+			if err := yaml.Unmarshal(data, &flatMap); err == nil && len(flatMap) > 0 {
+				for k, v := range flatMap {
+					result[strings.ToLower(k)] = v
+				}
 			}
 		}
 	}
+
+	// Fallback defaults if YAML is missing or empty
+	if len(result) == 0 {
+		if strings.ToLower(sizeMode) == "full" {
+			result = map[string]string{
+				"jenkins":   "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Jenkins-Hudson.txt",
+				"apache":    "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache.txt",
+				"iis":       "wordlists/SecLists/Discovery/Web-Content/Web-Servers/IIS.txt",
+				"nginx":     "wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt",
+				"tomcat":    "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache-Tomcat.txt",
+				"wordpress": "wordlists/SecLists/Discovery/Web-Content/CMS/wordpress.fuzz.txt",
+				"default":   "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt",
+			}
+		} else {
+			result = map[string]string{
+				"jenkins":   "wordlists/jenkins.txt",
+				"apache":    "wordlists/apache.txt",
+				"wordpress": "wordlists/wordpress.txt",
+				"iis":       "wordlists/SecLists/Discovery/Web-Content/Web-Servers/IIS.txt",
+				"nginx":     "wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt",
+				"tomcat":    "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache-Tomcat.txt",
+				"default":   "wordlists/common.txt",
+			}
+		}
+	}
+
 	return result
 }
 
 // SelectWordlistForService selects the most relevant wordlist for a detected HTTP service.
-// Priority order is fixed — first match wins (deterministic, not map-random).
 func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]string, defaultWordlist string) (string, string) {
 	if defaultWordlist == "" {
 		defaultWordlist = "wordlists/common.txt"
 	}
 	if wordlistMap == nil {
-		wordlistMap = LoadServiceWordlistMap("")
+		wordlistMap = LoadServiceWordlistMap("", "quick")
 	}
 
 	haystack := strings.ToLower(fmt.Sprintf("%s %s %s %s %s",
@@ -63,15 +104,30 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 		strings.Join(svc.HTTPTechnologies, " "),
 	))
 
-	// Sabit öncelik sırası — map rastgele iterasyon sorunundan kaçınır
-	priorityOrder := []string{"wordpress", "jenkins", "apache", "nginx", "tomcat", "iis", "drupal", "joomla", "magento"}
+	// Fixed priority order — specific CMS and servers first
+	priorityOrder := []string{
+		"wordpress", "jenkins", "apache", "nginx", "tomcat", "iis", "drupal", "joomla",
+		"sharepoint", "springboot", "php", "aspnet", "gitlab", "grafana", "elasticsearch", "swagger", "api",
+	}
 
 	for _, key := range priorityOrder {
 		path, ok := wordlistMap[key]
 		if !ok {
 			continue
 		}
-		if strings.Contains(haystack, key) {
+
+		matched := false
+		if key == "springboot" {
+			matched = strings.Contains(haystack, "spring") || strings.Contains(haystack, "boot")
+		} else if key == "aspnet" {
+			matched = strings.Contains(haystack, "asp.net") || strings.Contains(haystack, "aspnet")
+		} else if key == "iis" {
+			matched = strings.Contains(haystack, "iis") || strings.Contains(haystack, "microsoft-iis")
+		} else {
+			matched = strings.Contains(haystack, key)
+		}
+
+		if matched {
 			if _, err := os.Stat(path); err == nil {
 				return path, key
 			}
@@ -79,12 +135,11 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 		}
 	}
 
-	// Haritada öncelik listesinde olmayan özel keyler (YAML'dan gelebilir)
+	// Check any other custom keys in the map
 	for key, path := range wordlistMap {
 		if key == "default" {
 			continue
 		}
-		// Öncelik listesinde zaten kontrol edilenleri atla
 		alreadyChecked := false
 		for _, pk := range priorityOrder {
 			if pk == key {
@@ -107,7 +162,6 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 		if _, err := os.Stat(defPath); err == nil {
 			return defPath, "default"
 		}
-		core.LogWarning("Varsayılan wordlist bulunamadı: %s, hardcode yedek kullanılıyor", defPath)
 	}
 
 	return defaultWordlist, "common"
@@ -270,15 +324,22 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 }
 
 // RunDirFuzzing orchestrates directory fuzzing across all open HTTP/HTTPS services with smart wordlists.
-func RunDirFuzzing(services []core.ServiceDetail, wordlistPath, sensitivePath string, concurrency int, delayMs int, outputJSON, outputTxt string) ([]core.DirFuzzFinding, error) {
-	if wordlistPath == "" {
-		wordlistPath = "wordlists/common.txt"
+func RunDirFuzzing(services []core.ServiceDetail, wordlistSizeMode string, defaultWordlist, sensitivePath string, concurrency int, delayMs int, outputJSON, outputTxt string) ([]core.DirFuzzFinding, error) {
+	if wordlistSizeMode == "" {
+		wordlistSizeMode = "quick"
+	}
+	if defaultWordlist == "" {
+		if wordlistSizeMode == "full" {
+			defaultWordlist = "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt"
+		} else {
+			defaultWordlist = "wordlists/common.txt"
+		}
 	}
 	if sensitivePath == "" {
 		sensitivePath = "wordlists/sensitive.txt"
 	}
 
-	wordlistMap := LoadServiceWordlistMap("")
+	wordlistMap := LoadServiceWordlistMap("", wordlistSizeMode)
 	sensitiveWords := LoadWordlist(sensitivePath)
 
 	var httpServices []core.ServiceDetail
@@ -295,7 +356,7 @@ func RunDirFuzzing(services []core.ServiceDetail, wordlistPath, sensitivePath st
 		return nil, nil
 	}
 
-	core.LogInfo("Toplam %d HTTP/HTTPS servisi taranacak.", len(httpServices))
+	core.LogInfo("Toplam %d HTTP/HTTPS servisi taranacak (Wordlist Modu: %s).", len(httpServices), strings.ToUpper(wordlistSizeMode))
 	var allFindings []core.DirFuzzFinding
 
 	for _, svc := range httpServices {
@@ -306,20 +367,20 @@ func RunDirFuzzing(services []core.ServiceDetail, wordlistPath, sensitivePath st
 		baseURL := fmt.Sprintf("%s://%s:%d", proto, svc.IP, svc.Port)
 
 		// Smart wordlist selection
-		selectedWordlistPath, matchKey := SelectWordlistForService(svc, wordlistMap, wordlistPath)
-		core.LogInfo("Servis '%s:%d' için akıllı wordlist seçildi: %s (Kategori: %s)", svc.IP, svc.Port, filepath.Base(selectedWordlistPath), matchKey)
-
+		selectedWordlistPath, matchKey := SelectWordlistForService(svc, wordlistMap, defaultWordlist)
 		serviceWords := LoadWordlist(selectedWordlistPath)
 
 		// Combine sensitive words with service words
 		seen := make(map[string]bool)
 		var combined []string
 		for _, w := range append(sensitiveWords, serviceWords...) {
-			if !seen[w] {
+			if !seen[w] && w != "" {
 				seen[w] = true
 				combined = append(combined, w)
 			}
 		}
+
+		core.LogInfo("Servis '%s:%d' için wordlist seçildi: %s (%s, toplam %d kelime)", svc.IP, svc.Port, filepath.Base(selectedWordlistPath), matchKey, len(combined))
 
 		found := FuzzTargetService(baseURL, combined, matchKey, concurrency, delayMs)
 		allFindings = append(allFindings, found...)

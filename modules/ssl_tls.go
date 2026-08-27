@@ -18,22 +18,28 @@ func AuditSSLService(ip string, port int, timeout time.Duration) core.SslFinding
 	}
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 
-	// Attempt connection with TLS InsecureSkipVerify to fetch cert details even if untrusted
+	finding := core.SslFinding{
+		IP:       ip,
+		Port:     port,
+		Severity: "INFO",
+	}
+
+	// Attempt connection with TLS InsecureSkipVerify and SNI
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, &tls.Config{
 		InsecureSkipVerify: true,
+		ServerName:         ip,
 	})
 
 	if err != nil {
-		return core.SslFinding{
-			IP:   ip,
-			Port: port,
-		}
+		finding.Notes = []string{fmt.Sprintf("TLS bağlantısı kurulamadı: %v", err)}
+		return finding
 	}
 	defer conn.Close()
 
 	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
-		return core.SslFinding{IP: ip, Port: port}
+		finding.Notes = []string{"Sunucudan TLS sertifikası alınamadı"}
+		return finding
 	}
 
 	cert := state.PeerCertificates[0]
@@ -80,6 +86,7 @@ func AuditSSLService(ip string, port int, timeout time.Duration) core.SslFinding
 	for _, p := range protocols {
 		testConn, err := tls.DialWithDialer(&net.Dialer{Timeout: 1500 * time.Millisecond}, "tcp", addr, &tls.Config{
 			InsecureSkipVerify: true,
+			ServerName:         ip,
 			MinVersion:         p.ver,
 			MaxVersion:         p.ver,
 		})
@@ -105,6 +112,10 @@ func AuditSSLService(ip string, port int, timeout time.Duration) core.SslFinding
 	issuer := cert.Issuer.CommonName
 	if issuer == "" && len(cert.Issuer.Organization) > 0 {
 		issuer = cert.Issuer.Organization[0]
+	}
+
+	if len(notes) == 0 {
+		notes = append(notes, "Geçerli / Güvenli Sertifika")
 	}
 
 	return core.SslFinding{
@@ -141,13 +152,13 @@ func AuditSSLMultiple(services []core.ServiceDetail, timeout time.Duration, outp
 
 	for _, t := range targets {
 		f := AuditSSLService(t.IP, t.Port, timeout)
-		if f.Subject != "" || len(f.Notes) > 0 {
-			findings = append(findings, f)
-			if len(f.Notes) > 0 {
-				core.LogWarning("SSL/TLS Riski (%s:%d): %s", f.IP, f.Port, strings.Join(f.Notes, " | "))
-			} else {
-				core.LogSuccess("SSL Sertifikası okundu (%s:%d): CN=%s (Kalan gün: %d)", f.IP, f.Port, f.Subject, f.DaysUntilExpiry)
-			}
+		findings = append(findings, f)
+		if f.IsExpired || f.IsSelfSigned || len(f.WeakProtocols) > 0 {
+			core.LogWarning("SSL/TLS Riski (%s:%d): %s", f.IP, f.Port, strings.Join(f.Notes, " | "))
+		} else if f.Subject != "" {
+			core.LogSuccess("SSL Sertifikası okundu (%s:%d): CN=%s (Kalan gün: %d)", f.IP, f.Port, f.Subject, f.DaysUntilExpiry)
+		} else {
+			core.LogInfo("SSL/TLS Kontrol (%s:%d): %s", f.IP, f.Port, strings.Join(f.Notes, " | "))
 		}
 	}
 

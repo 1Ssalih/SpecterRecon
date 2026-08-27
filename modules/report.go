@@ -19,7 +19,6 @@ func BuildCompleteReport(
 	hosts []core.HostInfo,
 	ports []core.PortInfo,
 	services []core.ServiceDetail,
-	vulns []core.VulnerabilityInfo,
 	findings []core.DirFuzzFinding,
 	durationSeconds float64,
 ) core.CompleteScanReport {
@@ -49,13 +48,6 @@ func BuildCompleteReport(
 			}
 		}
 
-		var hVulns []core.VulnerabilityInfo
-		for _, v := range vulns {
-			if strings.Contains(v.AffectedService, h.IP) {
-				hVulns = append(hVulns, v)
-			}
-		}
-
 		var hFindings []core.DirFuzzFinding
 		for _, f := range findings {
 			if strings.Contains(f.URL, h.IP) {
@@ -64,38 +56,27 @@ func BuildCompleteReport(
 		}
 
 		hostReports = append(hostReports, core.HostScanReport{
-			Host:            h,
-			Ports:           hPorts,
-			Services:        hServices,
-			Vulnerabilities: hVulns,
-			DirFindings:     hFindings,
+			Host:        h,
+			Ports:       hPorts,
+			Services:    hServices,
+			DirFindings: hFindings,
 		})
-	}
-
-	severityBreakdown := map[string]int{
-		"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNKNOWN": 0,
-	}
-	for _, v := range vulns {
-		sev := strings.ToUpper(v.Severity)
-		severityBreakdown[sev]++
 	}
 
 	randomID := make([]byte, 4)
 	_, _ = rand.Read(randomID)
 
 	return core.CompleteScanReport{
-		ScanID:            fmt.Sprintf("%x", randomID),
-		Target:            target,
-		ScanDate:          time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-		DurationSeconds:   durationSeconds,
-		DNSFindings:       dnsFindings,
-		TotalDNSRecords:   len(dnsFindings),
-		Hosts:             hostReports,
-		TotalHosts:        len(hostReports),
-		TotalOpenPorts:    len(ports),
-		TotalVulns:        len(vulns),
-		TotalFindings:     len(findings),
-		SeverityBreakdown: severityBreakdown,
+		ScanID:          fmt.Sprintf("%x", randomID),
+		Target:          target,
+		ScanDate:        time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		DurationSeconds: durationSeconds,
+		DNSFindings:     dnsFindings,
+		TotalDNSRecords: len(dnsFindings),
+		Hosts:           hostReports,
+		TotalHosts:      len(hostReports),
+		TotalOpenPorts:  len(ports),
+		TotalFindings:   len(findings),
 	}
 }
 

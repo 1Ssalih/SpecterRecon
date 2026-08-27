@@ -23,7 +23,9 @@ var dnsCmd = &cobra.Command{
 		target := args[0]
 		core.PrintBanner(version)
 		core.EnsureOutputDir("output")
-		verifyScopePermission(target)
+		if !verifyScopePermission(target) {
+			return
+		}
 
 		findings, _, _ := modules.EnumerateDNS(
 			target,

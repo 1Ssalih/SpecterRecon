@@ -24,7 +24,9 @@ var portscanCmd = &cobra.Command{
 		target := args[0]
 		core.PrintBanner(version)
 		core.EnsureOutputDir("output")
-		verifyScopePermission(target)
+		if !verifyScopePermission(target) {
+			return
+		}
 
 		ports := modules.ParsePortSpecs(psPortsFlag)
 		found, _ := modules.ScanTargetPorts(target, ports, psThreadsFlag, 1500*time.Millisecond, psOutputFlag)
