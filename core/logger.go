@@ -56,7 +56,6 @@ func LogStep(stepName string) {
 		Println(fmt.Sprintf("▸ %s", strings.ToUpper(stepName)))
 }
 
-
 // LogInfo prints informational message.
 func LogInfo(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
@@ -347,126 +346,6 @@ func PrintHttpAuditTable(findings []HttpAuditFinding) {
 		WithData(tableData).Render()
 }
 
-// PrintSmbTable displays SMB enumeration findings in a terminal table.
-func PrintSmbTable(findings []SmbFinding) {
-	if len(findings) == 0 {
-		return
-	}
-	tableData := pterm.TableData{
-		{"IP:Port", "NetBIOS / Domain", "Null Session", "SMB Signing", "Paylaşımlar"},
-	}
-	for _, f := range findings {
-		nullSess := "Hayır"
-		if f.NullSession {
-			nullSess = "⚠️ EVET"
-		}
-		signing := "Aktif"
-		if f.SigningDisabled {
-			signing = "⚠️ DEVRE DIŞI"
-		}
-		shares := strings.Join(f.Shares, ", ")
-		if len(shares) > 30 {
-			shares = shares[:27] + "..."
-		}
-		tableData = append(tableData, []string{
-			fmt.Sprintf("%s:%d", f.IP, f.Port),
-			fmt.Sprintf("%s (%s)", f.NetbiosName, f.Domain),
-			nullSess,
-			signing,
-			shares,
-		})
-	}
-	pterm.Println()
-	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgGreen, pterm.Bold)).
-		WithData(tableData).Render()
-}
-
-// PrintFtpTable displays FTP audit findings in a terminal table.
-func PrintFtpTable(findings []FtpFinding) {
-	if len(findings) == 0 {
-		return
-	}
-	tableData := pterm.TableData{
-		{"IP:Port", "Banner", "Anonymous Giriş", "Anonymous Yazma", "FTPS (TLS)"},
-	}
-	for _, f := range findings {
-		anon := "Hayır"
-		if f.AnonLogin {
-			anon = "⚠️ EVET"
-		}
-		write := "Hayır"
-		if f.AnonWritable {
-			write = "⚠️ EVET"
-		}
-		ftps := "Evet"
-		if !f.FTPSEnabled {
-			ftps = "Hayır"
-		}
-		tableData = append(tableData, []string{
-			fmt.Sprintf("%s:%d", f.IP, f.Port),
-			f.Banner,
-			anon,
-			write,
-			ftps,
-		})
-	}
-	pterm.Println()
-	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgLightMagenta, pterm.Bold)).
-		WithData(tableData).Render()
-}
-
-// PrintDbTable displays database audit findings in a terminal table.
-func PrintDbTable(findings []DbFinding) {
-	if len(findings) == 0 {
-		return
-	}
-	tableData := pterm.TableData{
-		{"IP:Port", "DB Tipi", "Versiyon", "Anonim Access", "Default Creds"},
-	}
-	for _, f := range findings {
-		anon := "Hayır"
-		if f.AnonAccess {
-			anon = "🚨 EVET (NO AUTH)"
-		}
-		defCred := "Hayır"
-		if f.DefaultCreds {
-			defCred = fmt.Sprintf("🚨 %s:%s", f.Username, f.Password)
-		}
-		tableData = append(tableData, []string{
-			fmt.Sprintf("%s:%d", f.IP, f.Port),
-			f.DbType,
-			f.Version,
-			anon,
-			defCred,
-		})
-	}
-	pterm.Println()
-	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgRed, pterm.Bold)).
-		WithData(tableData).Render()
-}
-
-// PrintCredTable displays successful default credential attempts.
-func PrintCredTable(findings []CredFinding) {
-	if len(findings) == 0 {
-		return
-	}
-	tableData := pterm.TableData{
-		{"IP:Port", "Protokol", "Kullanıcı Adı", "Parola", "Şiddet"},
-	}
-	for _, f := range findings {
-		tableData = append(tableData, []string{
-			fmt.Sprintf("%s:%d", f.IP, f.Port),
-			f.Protocol,
-			f.Username,
-			f.Password,
-			"🚨 " + f.Severity,
-		})
-	}
-	pterm.Println()
-	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgRed, pterm.Bold)).
-		WithData(tableData).Render()
-}
-
 // PrintSummaryTable displays final executive scan summary.
 func PrintSummaryTable(report CompleteScanReport) {
 	pterm.Println()
@@ -493,5 +372,3 @@ func PrintSummaryTable(report CompleteScanReport) {
 	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
 		WithData(tableData).Render()
 }
-
-

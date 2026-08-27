@@ -113,7 +113,6 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 	return defaultWordlist, "common"
 }
 
-
 // LoadWordlist reads paths from wordlist file.
 func LoadWordlist(filepath string) []string {
 	file, err := os.Open(filepath)

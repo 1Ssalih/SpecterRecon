@@ -19,15 +19,20 @@ var (
 // RootCmd is the base command for SpecterRecon.
 var RootCmd = &cobra.Command{
 	Use:   "specter-recon",
-	Short: "SpecterRecon: Yüksek Performanslı Evrensel Güvenlik Tarama Motoru",
+	Short: "SpecterRecon: Yüksek Performanslı Ağ Keşif (Recon) ve Zafiyet Analiz Motoru",
 	Long: `SpecterRecon, siber güvenlik araştırmacıları ve sızma testi ekipleri için
 geliştirilmiş, yüksek eşzamanlılıklı (Goroutine), modüler ve tam pipeline destekli
-güvenlik tarama ve zafiyet analiz aracıdır.`,
+ağ keşif (reconnaissance) ve zafiyet analiz aracıdır.
+
+Çekirdek modüller: DNS Enumeration, Host Discovery, Port Scan, Banner Grabbing,
+CVE Matching ve Web Directory Fuzzing.
+
+Opsiyonel genişletilmiş modüller (--extended): SSL/TLS Audit, HTTP Security Audit,
+SSH Konfigürasyon Audit.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		StartInteractiveShell(cmd)
 	},
 }
-
 
 func Execute() {
 	if err := RootCmd.Execute(); err != nil {

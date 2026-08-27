@@ -16,7 +16,9 @@ var (
 var dnsCmd = &cobra.Command{
 	Use:   "dns [domain]",
 	Short: "Hedef domain için DNS Enumeration ve opsiyonel Subdomain Brute-Force yapar",
-	Args:  cobra.ExactArgs(1),
+	Example: `  specter-recon dns example.com --authorized
+  specter-recon dns example.com --subdomains --authorized`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
 		core.PrintBanner(version)

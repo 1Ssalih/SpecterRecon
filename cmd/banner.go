@@ -16,6 +16,8 @@ var (
 var bannerCmd = &cobra.Command{
 	Use:   "banner",
 	Short: "Açık portlar için banner grabbing ve versiyon tespiti yapar",
+	Example: `  specter-recon banner --authorized
+  specter-recon banner -i output/ports.json -o output/services.json --authorized`,
 	Run: func(cmd *cobra.Command, args []string) {
 		core.PrintBanner(version)
 		core.EnsureOutputDir("output")

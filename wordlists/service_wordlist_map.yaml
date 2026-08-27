@@ -1,7 +1,16 @@
 # SpecterRecon Servis -> Wordlist Eşleştirme Yapılandırması
 # Banner analizi sonucunda tespit edilen teknolojiye göre özel wordlist seçilir.
+# --wordlist-size quick modunda küçük yerleşik listeler, full modunda SecLists kullanılır.
 
+# Quick mod (küçük yerleşik listeler)
 jenkins: "wordlists/jenkins.txt"
 apache: "wordlists/apache.txt"
 wordpress: "wordlists/wordpress.txt"
 default: "wordlists/common.txt"
+
+# Full mod (SecLists) — --wordlist-size full ile aktif olur
+# Bu yollar SecLists git submodule yapısına göre ayarlanmıştır.
+# jenkins_full: "wordlists/SecLists/Discovery/Web-Content/CMS/Jenkins.fuzz.txt"
+# apache_full: "wordlists/SecLists/Discovery/Web-Content/Apache.fuzz.txt"
+# wordpress_full: "wordlists/SecLists/Discovery/Web-Content/CMS/wordpress.fuzz.txt"
+# default_full: "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt"

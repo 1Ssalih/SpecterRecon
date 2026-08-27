@@ -16,7 +16,9 @@ var (
 var discoverCmd = &cobra.Command{
 	Use:   "discover [target]",
 	Short: "Sadece Host Keşfi (ARP/ICMP/TCP ping) çalıştırır",
-	Args:  cobra.ExactArgs(1),
+	Example: `  specter-recon discover 192.168.1.0/24 --authorized
+  specter-recon discover 10.0.0.1 --authorized`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
 		core.PrintBanner(version)

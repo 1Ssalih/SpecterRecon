@@ -13,7 +13,9 @@ import (
 var sslCmd = &cobra.Command{
 	Use:   "ssl [host:port or ip]",
 	Short: "Hedefte SSL/TLS sertifika ve zayıf protokol denetimi yapar",
-	Args:  cobra.ExactArgs(1),
+	Example: `  specter-recon ssl example.com:443
+  specter-recon ssl 192.168.1.10:8443`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
 		core.PrintBanner(version)

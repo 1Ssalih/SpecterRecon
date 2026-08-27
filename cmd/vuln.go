@@ -14,6 +14,8 @@ var (
 var vulnCmd = &cobra.Command{
 	Use:   "vuln",
 	Short: "Servis listesi için CVE zafiyet eşleştirmesi yapar",
+	Example: `  specter-recon vuln --authorized
+  specter-recon vuln -i output/services.json --authorized`,
 	Run: func(cmd *cobra.Command, args []string) {
 		core.PrintBanner(version)
 		core.EnsureOutputDir("output")

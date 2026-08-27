@@ -17,7 +17,9 @@ var (
 var portscanCmd = &cobra.Command{
 	Use:   "portscan [target]",
 	Short: "Hedef üzerinde TCP Connect port taraması yapar",
-	Args:  cobra.ExactArgs(1),
+	Example: `  specter-recon portscan 192.168.1.10 --authorized
+  specter-recon portscan 192.168.1.10 -p 1-1024 -t 100 --authorized`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
 		core.PrintBanner(version)

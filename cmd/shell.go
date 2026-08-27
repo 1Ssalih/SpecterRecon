@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 
@@ -13,6 +14,8 @@ import (
 var shellCmd = &cobra.Command{
 	Use:   "shell",
 	Short: "İnteraktif Konsol Modunu başlatır (her seferinde exe adı yazmanıza gerek kalmaz)",
+	Example: `  # İnteraktif konsol moduna gir
+  specter-recon shell`,
 	Run: func(cmd *cobra.Command, args []string) {
 		StartInteractiveShell(cmd.Root())
 	},
@@ -25,12 +28,29 @@ func init() {
 // StartInteractiveShell launches an interactive terminal session (like Metasploit console).
 func StartInteractiveShell(rootCmd *cobra.Command) {
 	core.PrintBanner(version)
+
+	// Güvenlik Guardrail: Shell moduna girişte tek seferlik yasal izin onayı
+	pterm.Println()
+	pterm.DefaultBox.WithTitle("YASAL UYARI & GÜVENLİK GUARDRAIL'I").
+		WithBoxStyle(pterm.NewStyle(pterm.FgYellow, pterm.Bold)).
+		Println("Bu interaktif oturumda çalıştıracağınız TÜM komutlar için\nyasal tarama izninizin olduğunu onaylamanız gerekmektedir.\n\nBu araç yalnızca yetkili olduğunuz sistemler (lab, CTF, izinli pentest) içindir.")
+
+	fmt.Print("\nBu oturumdaki tüm taramalar için yasal izniniz olduğunu onaylıyor musunuz? (e/H): ")
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.ToLower(strings.TrimSpace(answer))
+
+	if answer != "e" && answer != "y" && answer != "evet" && answer != "yes" {
+		core.LogError("Kullanıcı izni onaylamadı. İnteraktif konsol başlatılamıyor.")
+		return
+	}
+
+	// Onay alındıysa authorized flag'ini set et
+	authorizedFlag = true
+
 	pterm.DefaultBox.WithTitle("⚡ SPECTER-RECON İNTERAKTİF KONSOL MODU").
 		WithBoxStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
-		Println("Her seferinde '.\\specter-recon.exe' yazmanıza gerek yok!\nDoğrudan komutlarınızı yazabilirsiniz.\nÖrnekler:\n  - fullscan scanme.nmap.org\n  - scan scanme.nmap.org --profile web\n  - ssl scanme.nmap.org:443\n  - smb 192.168.1.10\n  - creds 192.168.1.10\n  - dirfuzz http://scanme.nmap.org\n  - help\n  - exit")
-
-	// In interactive shell mode, user is authorized
-	authorizedFlag = true
+		Println("Her seferinde '.\\specter-recon.exe' yazmanıza gerek yok!\nDoğrudan komutlarınızı yazabilirsiniz.\nÖrnekler:\n  - fullscan scanme.nmap.org\n  - scan scanme.nmap.org --extended\n  - ssl scanme.nmap.org:443\n  - dirfuzz http://scanme.nmap.org\n  - help\n  - exit")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for {

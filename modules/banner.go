@@ -154,8 +154,10 @@ func GrabRawSocketBanner(ip string, port int, timeout time.Duration) string {
 	if banner == "" {
 		// Send probe
 		probe := "\r\n\r\n"
-		if port == 21 || port == 25 || port == 587 {
+		if port == 25 || port == 587 {
 			probe = "EHLO recon.local\r\n"
+		} else if port == 21 {
+			probe = "SYST\r\n"
 		} else if port == 6379 {
 			probe = "INFO\r\n"
 		}
