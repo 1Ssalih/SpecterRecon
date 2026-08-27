@@ -14,7 +14,7 @@ import (
 var (
 	authorizedFlag       bool
 	isInteractiveSession bool
-	version              = "1.0.0"
+	version              = "0.8.0"
 )
 
 // RootCmd is the base command for SpecterRecon.

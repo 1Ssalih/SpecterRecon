@@ -143,13 +143,21 @@ func SaveFindings(findings []DirFuzzFinding, jsonPath, txtPath string) error {
 		defer file.Close()
 
 		for _, item := range findings {
+			matchedTag := item.MatchedTech
+			if matchedTag == "" {
+				matchedTag = item.WordlistMatched
+			}
 			matched := ""
-			if item.WordlistMatched != "" {
-				matched = fmt.Sprintf(" [Match: %s]", item.WordlistMatched)
+			if matchedTag != "" {
+				matched = fmt.Sprintf(" [Match: %s]", matchedTag)
 			}
 			sensitive := ""
 			if item.IsSensitive {
-				sensitive = " [CRITICAL SENSITIVE]"
+				if item.StatusCode == 401 || item.StatusCode == 403 {
+					sensitive = " [CRITICAL SENSITIVE: Potential Sensitive File (Access Denied)]"
+				} else {
+					sensitive = " [CRITICAL SENSITIVE]"
+				}
 			}
 			_, _ = fmt.Fprintf(file, "[%d] %s (size: %d bytes)%s%s\n", item.StatusCode, item.URL, item.ContentLength, matched, sensitive)
 		}
@@ -261,7 +269,11 @@ func SaveSummaryTxt(
 		if s.SSLEnabled {
 			ssl = " [SSL]"
 		}
-		w("  + %s:%d  %-10s  %s%s", s.IP, s.Port, s.ServiceName, ver, ssl)
+		confStr := ""
+		if s.VersionConfidence > 0 {
+			confStr = fmt.Sprintf(" (Güven: %%%d, Kaynak: %s)", s.VersionConfidence, s.VersionSource)
+		}
+		w("  + %s:%d  %-10s  %s%s%s", s.IP, s.Port, s.ServiceName, ver, ssl, confStr)
 	}
 	w("")
 

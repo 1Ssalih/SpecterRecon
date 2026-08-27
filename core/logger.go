@@ -209,7 +209,9 @@ func PrintServicesTable(services []ServiceDetail) {
 	}
 	for _, s := range services {
 		ver := s.ServiceVersion
-		if ver == "" {
+		if ver != "" && s.VersionConfidence > 0 {
+			ver = fmt.Sprintf("v%s (%%%d)", s.ServiceVersion, s.VersionConfidence)
+		} else if ver == "" {
 			ver = s.HTTPTitle
 		}
 		if ver == "" {
@@ -230,6 +232,9 @@ func PrintServicesTable(services []ServiceDetail) {
 		sslStr := "Hayır"
 		if s.SSLEnabled {
 			sslStr = "🔒 Evet"
+			if s.SSLInfo != nil && s.SSLInfo.TLSVersion != "" {
+				sslStr = fmt.Sprintf("🔒 %s", s.SSLInfo.TLSVersion)
+			}
 		}
 
 		tableData = append(tableData, []string{
@@ -265,11 +270,20 @@ func PrintDirFindingsTable(findings []DirFuzzFinding) {
 			info = info[:32] + "..."
 		}
 
+		matchTag := f.MatchedTech
+		if matchTag == "" {
+			matchTag = f.WordlistMatched
+		}
+
 		tag := "Standart"
 		if f.IsSensitive {
-			tag = "⚠️ HASSAS DOSYA"
-		} else if f.WordlistMatched != "" {
-			tag = fmt.Sprintf("📁 %s", f.WordlistMatched)
+			if f.StatusCode == 401 || f.StatusCode == 403 {
+				tag = "⚠️ HASSAS (403/401)"
+			} else {
+				tag = "⚠️ HASSAS DOSYA"
+			}
+		} else if matchTag != "" {
+			tag = fmt.Sprintf("📁 %s", matchTag)
 		}
 
 		tableData = append(tableData, []string{

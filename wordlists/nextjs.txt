@@ -1,0 +1,16 @@
+_next
+_next/static
+_next/image
+_next/data
+api
+api/auth
+api/hello
+api/trpc
+favicon.ico
+robots.txt
+sitemap.xml
+manifest.json
+_error
+404
+500
+__nextjs_original-stack-frame

@@ -59,7 +59,7 @@ var dirfuzzCmd = &cobra.Command{
 			defaultWordlist = dfWordlistFlag
 		}
 
-		selectedWordlist := defaultWordlist
+		selectedWordlists := []string{defaultWordlist}
 		matchTag := "common"
 
 		if dfServiceFlag != "" {
@@ -68,8 +68,12 @@ var dirfuzzCmd = &cobra.Command{
 				ServiceName:        "http",
 				ServiceDescription: dfServiceFlag,
 			}
-			selectedWordlist, matchTag = modules.SelectWordlistForService(fakeSvc, wordlistMap, defaultWordlist)
-			core.LogInfo("Belirtilen servis '%s' için wordlist: %s (Kategori: %s)", dfServiceFlag, filepath.Base(selectedWordlist), matchTag)
+			selectedWordlists, matchTag = modules.SelectWordlistForService(fakeSvc, wordlistMap, defaultWordlist)
+			var baseNames []string
+			for _, p := range selectedWordlists {
+				baseNames = append(baseNames, filepath.Base(p))
+			}
+			core.LogInfo("Belirtilen servis '%s' için wordlist: %s (Kategori: %s)", dfServiceFlag, strings.Join(baseNames, "+"), matchTag)
 		} else if !cmd.Flags().Changed("wordlist") {
 			// Auto-probe target URL to detect service banner
 			core.LogInfo("Hedef teknoloji tespiti için hızlı HTTP probe yapılıyor...")
@@ -93,22 +97,35 @@ var dirfuzzCmd = &cobra.Command{
 						HTTPServer:       probeRes.Server,
 						HTTPTitle:        probeRes.Title,
 						HTTPTechnologies: probeRes.Technologies,
+						DetectedTechs:    probeRes.DetectedTechs,
 					}
-					selectedWordlist, matchTag = modules.SelectWordlistForService(fakeSvc, wordlistMap, defaultWordlist)
+					selectedWordlists, matchTag = modules.SelectWordlistForService(fakeSvc, wordlistMap, defaultWordlist)
 					if matchTag != "default" && matchTag != "common" {
-						core.LogSuccess("Otomatik servis tespiti yapıldı (%s %s) ➔ Wordlist: %s (%s)", probeRes.Server, probeRes.Title, filepath.Base(selectedWordlist), matchTag)
+						var baseNames []string
+						for _, p := range selectedWordlists {
+							baseNames = append(baseNames, filepath.Base(p))
+						}
+						core.LogSuccess("Otomatik servis tespiti yapıldı (%s %s) ➔ Wordlist: %s (%s)", probeRes.Server, probeRes.Title, strings.Join(baseNames, "+"), matchTag)
 					}
 				}
 			}
 		}
 
-		words := modules.LoadWordlist(selectedWordlist)
+		var wordlistsToMerge [][]string
+		for _, path := range selectedWordlists {
+			wordlistsToMerge = append(wordlistsToMerge, modules.LoadWordlist(path))
+		}
+		words := modules.MergeUnique(wordlistsToMerge...)
 		if len(words) == 0 {
-			core.LogError("Wordlist boş veya bulunamadı: %s", selectedWordlist)
+			core.LogError("Wordlist boş veya bulunamadı: %v", selectedWordlists)
 			return
 		}
 
-		core.LogInfo("Dizin taraması başlatılıyor (Liste: %s, Toplam %d kelime)...", filepath.Base(selectedWordlist), len(words))
+		var displayNames []string
+		for _, p := range selectedWordlists {
+			displayNames = append(displayNames, filepath.Base(p))
+		}
+		core.LogInfo("Dizin taraması başlatılıyor (Liste: %s, Toplam %d kelime)...", strings.Join(displayNames, "+"), len(words))
 		findings := modules.FuzzTargetService(targetURL, words, matchTag, dfThreadsFlag, dfDelayFlag)
 		_ = core.SaveFindings(findings, dfJSONFlag, dfTxtFlag)
 		core.PrintDirFindingsTable(findings)

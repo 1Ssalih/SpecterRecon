@@ -1,7 +1,13 @@
 package modules
 
 import (
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,39 +32,91 @@ func TestIsDomainName(t *testing.T) {
 
 func TestSmartWordlistSelection(t *testing.T) {
 	wordlistMap := map[string]string{
-		"apache":    "../wordlists/apache.txt",
-		"jenkins":   "../wordlists/jenkins.txt",
-		"wordpress": "../wordlists/wordpress.txt",
-		"default":   "../wordlists/common.txt",
+		"apache":     "../wordlists/apache.txt",
+		"jenkins":    "../wordlists/jenkins.txt",
+		"wordpress":  "../wordlists/wordpress.txt",
+		"springboot": "../wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/Java-Spring-Boot.txt",
+		"nginx":      "../wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt",
+		"default":    "../wordlists/common.txt",
 	}
 
 	apacheSvc := core.ServiceDetail{
 		ServiceName:        "http",
 		ServiceDescription: "Apache HTTP Server 2.4.49",
 	}
-	wPath, key := SelectWordlistForService(apacheSvc, wordlistMap, "../wordlists/common.txt")
-	if key != "apache" || !strings.Contains(wPath, "apache.txt") {
-		t.Errorf("Apache servisi icin apache.txt secilmeli, alinan: key=%s, path=%s", key, wPath)
+	wPaths, key := SelectWordlistForService(apacheSvc, wordlistMap, "../wordlists/common.txt")
+	if !strings.Contains(key, "apache") || len(wPaths) == 0 || !strings.Contains(wPaths[0], "apache.txt") {
+		t.Errorf("Apache servisi icin apache.txt secilmeli, alinan: key=%s, paths=%v", key, wPaths)
 	}
 
 	unknownSvc := core.ServiceDetail{
 		ServiceName:        "http",
 		ServiceDescription: "Unknown Custom Server",
 	}
-	wPath2, key2 := SelectWordlistForService(unknownSvc, wordlistMap, "../wordlists/common.txt")
+	wPaths2, key2 := SelectWordlistForService(unknownSvc, wordlistMap, "../wordlists/common.txt")
 	if key2 != "default" && key2 != "common" {
-		t.Errorf("Bilinmeyen servis varsayilana dusmeli, alinan: key=%s, path=%s", key2, wPath2)
+		t.Errorf("Bilinmeyen servis varsayilana dusmeli, alinan: key=%s, paths=%v", key2, wPaths2)
 	}
 
-	// Hem apache hem wordpress iceren servis: priority sirasina gore wordpress kazanmali
+	// Hem apache hem wordpress iceren servis: WordPress (Tier 1) ve Apache (Tier 4) listeleri donmeli, Tier 1 ilk sirada olmali
 	wpApacheSvc := core.ServiceDetail{
 		ServiceName:        "http",
 		ServiceDescription: "WordPress on Apache",
 		HTTPServer:         "Apache/2.4.49",
 	}
-	wPath3, key3 := SelectWordlistForService(wpApacheSvc, wordlistMap, "../wordlists/common.txt")
-	if key3 != "wordpress" || !strings.Contains(wPath3, "wordpress.txt") {
-		t.Errorf("WordPress+Apache servisinde wordpress.txt oncelikli olmali, alinan: key=%s, path=%s", key3, wPath3)
+	wPaths3, key3 := SelectWordlistForService(wpApacheSvc, wordlistMap, "../wordlists/common.txt")
+	if !strings.Contains(key3, "wordpress") || len(wPaths3) == 0 || !strings.Contains(wPaths3[0], "wordpress.txt") {
+		t.Errorf("WordPress+Apache servisinde wordpress.txt ilk sirada olmali, alinan: key=%s, paths=%v", key3, wPaths3)
+	}
+}
+
+func TestSpringBootBehindNginxScenario(t *testing.T) {
+	wordlistMap := map[string]string{
+		"springboot": "../wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/Java-Spring-Boot.txt",
+		"nginx":      "../wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt",
+		"default":    "../wordlists/common.txt",
+	}
+
+	// Nginx arkasında çalışan Spring Boot servisi simülasyonu
+	svc := core.ServiceDetail{
+		ServiceName:        "http",
+		HTTPServer:         "nginx/1.18.0 (Ubuntu)",
+		DetectedTechs:      []string{"springboot", "nginx"},
+		ServiceDescription: "Whitelabel Error Page - Spring Boot",
+	}
+
+	wPaths, key := SelectWordlistForService(svc, wordlistMap, "../wordlists/common.txt")
+	if len(wPaths) < 2 {
+		t.Fatalf("Nginx arkasında Spring Boot senaryosunda her iki katman da seçilmeli, alinan sayi: %d (paths: %v)", len(wPaths), wPaths)
+	}
+
+	// Tier 2 (springboot) Tier 4'ten (nginx) önce gelmeli
+	if !strings.Contains(wPaths[0], "Java-Spring-Boot.txt") {
+		t.Errorf("İlk sırada Spring Boot wordlist'i bekleniyordu, alinan: %s", wPaths[0])
+	}
+	if !strings.Contains(wPaths[1], "nginx.txt") {
+		t.Errorf("İkinci sırada Nginx wordlist'i bekleniyordu, alinan: %s", wPaths[1])
+	}
+	if !strings.Contains(key, "springboot") || !strings.Contains(key, "nginx") {
+		t.Errorf("Matched key 'springboot+nginx' içermeli, alinan: %s", key)
+	}
+}
+
+func TestMergeUnique(t *testing.T) {
+	list1 := []string{"admin", "login", "/api", "docs"}
+	list2 := []string{"login", "users", "# comment line", "", "  api  "}
+	list3 := []string{"docs", "actuator/health", "admin"}
+
+	merged := MergeUnique(list1, list2, list3)
+	expected := []string{"admin", "login", "api", "docs", "users", "actuator/health"}
+
+	if len(merged) != len(expected) {
+		t.Fatalf("MergeUnique uzunluk hatası: beklenen %d, alinan %d (%v)", len(expected), len(merged), merged)
+	}
+	for i, v := range expected {
+		if merged[i] != v {
+			t.Errorf("Index %d hatası: beklenen '%s', alinan '%s'", i, v, merged[i])
+		}
 	}
 }
 
@@ -229,3 +287,261 @@ func TestPassiveModulesInitialization(t *testing.T) {
 		t.Errorf("HTTP Audit IP/Port hatali: %v", httpFinding)
 	}
 }
+
+func TestWappalyzerStyleFingerprinting(t *testing.T) {
+	// Test 1: WordPress via Meta Generator & wp-content
+	ts1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "Apache/2.4.52")
+		w.Header().Set("X-Powered-By", "PHP/8.1.2")
+		fmt.Fprintln(w, `<html><head><meta name="generator" content="WordPress 6.2" /><title>My Blog</title></head><body><link rel="stylesheet" href="/wp-content/themes/style.css"></body></html>`)
+	}))
+	defer ts1.Close()
+
+	u1, _ := url.Parse(ts1.URL)
+	port1, _ := strconv.Atoi(u1.Port())
+	res1 := ProbeHTTPService(u1.Hostname(), port1, false, 2*time.Second)
+
+	hasWP := false
+	hasPHP := false
+	hasApache := false
+	for _, tech := range res1.DetectedTechs {
+		if tech == "wordpress" {
+			hasWP = true
+		}
+		if tech == "php" {
+			hasPHP = true
+		}
+		if tech == "apache" {
+			hasApache = true
+		}
+	}
+	if !hasWP || !hasPHP || !hasApache {
+		t.Errorf("WordPress/PHP/Apache tespiti başarısız: %v", res1.DetectedTechs)
+	}
+
+	// Test 2: Next.js via __NEXT_DATA__
+	ts2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "Vercel")
+		fmt.Fprintln(w, `<html><head><title>App</title></head><body><div id="__next"><script id="__NEXT_DATA__" type="application/json">{"props":{}}</script></div></body></html>`)
+	}))
+	defer ts2.Close()
+
+	u2, _ := url.Parse(ts2.URL)
+	port2, _ := strconv.Atoi(u2.Port())
+	res2 := ProbeHTTPService(u2.Hostname(), port2, false, 2*time.Second)
+
+	hasNext := false
+	for _, tech := range res2.DetectedTechs {
+		if tech == "nextjs" {
+			hasNext = true
+		}
+	}
+	if !hasNext {
+		t.Errorf("Next.js __NEXT_DATA__ tespiti başarısız: %v", res2.DetectedTechs)
+	}
+
+	// Test 3: Spring Boot Whitelabel Error Page
+	ts3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "nginx/1.18.0")
+		w.Header().Set("X-Application-Context", "application:production")
+		fmt.Fprintln(w, `<html><body><h1>Whitelabel Error Page</h1><p>This application has no explicit mapping for /error</p></body></html>`)
+	}))
+	defer ts3.Close()
+
+	u3, _ := url.Parse(ts3.URL)
+	port3, _ := strconv.Atoi(u3.Port())
+	res3 := ProbeHTTPService(u3.Hostname(), port3, false, 2*time.Second)
+
+	hasSpring := false
+	hasNginx := false
+	for _, tech := range res3.DetectedTechs {
+		if tech == "springboot" {
+			hasSpring = true
+		}
+		if tech == "nginx" {
+			hasNginx = true
+		}
+	}
+	if !hasSpring || !hasNginx {
+		t.Errorf("Spring Boot + Nginx tespiti başarısız: %v", res3.DetectedTechs)
+	}
+}
+
+func TestSensitiveKeywordsAccessDenied(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, ".env") || strings.Contains(r.URL.Path, "backup.sql") {
+			w.WriteHeader(http.StatusForbidden) // 403
+			fmt.Fprintln(w, "Forbidden Access")
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	statusFilter := map[int]bool{200: true, 401: true, 403: true}
+	client := ts.Client()
+
+	finding := FuzzSingleURL(client, ts.URL, ".env", "sensitive", statusFilter, nil)
+	if finding == nil {
+		t.Fatalf("403 Forbidden dönen .env dosyası finding olarak yakalanamadı")
+	}
+	if !finding.IsSensitive {
+		t.Errorf(".env dosyası IsSensitive=true olmalı")
+	}
+	if finding.StatusCode != 403 {
+		t.Errorf("StatusCode 403 bekleniyordu, alinan: %d", finding.StatusCode)
+	}
+	if !strings.Contains(finding.Title, "Access Denied") {
+		t.Errorf("Title 'Access Denied' içermeli, alinan: %s", finding.Title)
+	}
+	if finding.MatchedTech != "sensitive" {
+		t.Errorf("MatchedTech 'sensitive' olmalı, alinan: %s", finding.MatchedTech)
+	}
+}
+
+func TestRateLimiterIntegration(t *testing.T) {
+	requestCount := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	words := []string{"test1", "test2", "test3", "test4"}
+	// 50ms delay per request
+	start := time.Now()
+	findings := FuzzTargetService(ts.URL, words, "test", 2, 50)
+	duration := time.Since(start)
+
+	if len(findings) != 4 {
+		t.Errorf("Tüm yollar bulunmalıydı, bulunan: %d", len(findings))
+	}
+	// 4 requests at ~50ms each should take at least ~100ms
+	if duration < 100*time.Millisecond {
+		t.Logf("Rate limit süresi: %v", duration)
+	}
+}
+
+func TestSSHOpenSSHBanners(t *testing.T) {
+	// 1. OpenSSH Banner
+	raw1 := "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6"
+	spec1 := FindProbeSpecByPort(22)
+	res1 := MatchBannerAgainstRules(spec1, raw1)
+	if res1.ServiceName != "ssh" || res1.Version != "8.9p1" {
+		t.Errorf("OpenSSH banner parse hatası: name=%s, ver=%s", res1.ServiceName, res1.Version)
+	}
+	if res1.Confidence < 90 {
+		t.Errorf("OpenSSH confidence >= 90 olmalı, alinan: %d", res1.Confidence)
+	}
+
+	// 2. Dropbear SSH Banner
+	raw2 := "SSH-2.0-Dropbear_2022.82"
+	res2 := MatchBannerAgainstRules(spec1, raw2)
+	if res2.ServiceName != "ssh" || res2.Version != "2022.82" {
+		t.Errorf("Dropbear banner parse hatası: name=%s, ver=%s", res2.ServiceName, res2.Version)
+	}
+}
+
+func TestFTPMultiLineBanners(t *testing.T) {
+	raw := "220-Welcome to FTP Service\r\n220-vsftpd 3.0.5\r\n220 Ready"
+	spec := FindProbeSpecByPort(21)
+	res := MatchBannerAgainstRules(spec, raw)
+	if res.ServiceName != "ftp" || res.Version != "3.0.5" {
+		t.Errorf("FTP multi-line banner parse hatası: name=%s, ver=%s", res.ServiceName, res.Version)
+	}
+	if !strings.Contains(res.ServiceDesc, "vsftpd") {
+		t.Errorf("FTP service desc 'vsftpd' içermeli: %s", res.ServiceDesc)
+	}
+}
+
+func TestRedisINFOProbe(t *testing.T) {
+	raw := "# Server\r\nredis_version:7.0.12\r\nredis_mode:standalone\r\nos:Linux"
+	spec := FindProbeSpecByPort(6379)
+	res := MatchBannerAgainstRules(spec, raw)
+	if res.ServiceName != "redis" || res.Version != "7.0.12" {
+		t.Errorf("Redis INFO parse hatası: name=%s, ver=%s", res.ServiceName, res.Version)
+	}
+	if res.Confidence < 90 {
+		t.Errorf("Redis confidence >= 90 olmalı: %d", res.Confidence)
+	}
+}
+
+func TestMemcachedVersionProbe(t *testing.T) {
+	raw := "VERSION 1.6.18\r\n"
+	spec := FindProbeSpecByPort(11211)
+	res := MatchBannerAgainstRules(spec, raw)
+	if res.ServiceName != "memcached" || res.Version != "1.6.18" {
+		t.Errorf("Memcached VERSION parse hatası: name=%s, ver=%s", res.ServiceName, res.Version)
+	}
+}
+
+func TestPostgreSQLProbing(t *testing.T) {
+	// 1. SSLRequest 'S' response
+	res1, handled1 := ParsePostgreSQLProbe(5432, []byte{'S'})
+	if !handled1 || res1.ServiceName != "postgresql" {
+		t.Errorf("PostgreSQL SSLRequest 'S' cevabı tanınamadı: handled=%v", handled1)
+	}
+
+	// 2. PostgreSQL Error Banner
+	rawErr := "FATAL: password authentication failed for user (PostgreSQL 14.2)"
+	res2, handled2 := ParsePostgreSQLProbe(5432, []byte(rawErr))
+	if !handled2 || res2.ServiceName != "postgresql" || res2.Version != "14.2" {
+		t.Errorf("PostgreSQL error banner versiyon çıkarılamadı: handled=%v, ver=%s", handled2, res2.Version)
+	}
+}
+
+func TestRegexPriorityAndConfidence(t *testing.T) {
+	// Apache should win over PHP or lower priority match
+	raw := "Apache/2.4.41 (Ubuntu) PHP/8.0.2"
+	sName, sDesc, sVer := ExtractVersionFromText(raw)
+	if sName != "http" || !strings.Contains(sDesc, "Apache") || sVer != "2.4.41" {
+		t.Errorf("Öncelikli Apache match seçilemedi: name=%s, desc=%s, ver=%s", sName, sDesc, sVer)
+	}
+}
+
+func TestAnalyzeServiceSSHNoHTTP(t *testing.T) {
+	// Mock SSH listener sending SSH banner immediately
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("TCP listener açılamadı: %v", err)
+	}
+	defer l.Close()
+
+	port := l.Addr().(*net.TCPAddr).Port
+
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				_, _ = c.Write([]byte("SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n"))
+			}(conn)
+		}
+	}()
+
+	portInfo := core.PortInfo{
+		IP:          "127.0.0.1",
+		Port:        port,
+		Protocol:    "tcp",
+		State:       "open",
+		ServiceName: "ssh",
+	}
+
+	detail := AnalyzeService(portInfo, 2*time.Second)
+	if detail.ServiceName != "ssh" {
+		t.Errorf("Servis 'ssh' olmalı, alinan: %s", detail.ServiceName)
+	}
+	if detail.ServiceVersion != "8.9p1" {
+		t.Errorf("Versiyon '8.9p1' olmalı, alinan: %s", detail.ServiceVersion)
+	}
+	if detail.VersionConfidence < 90 {
+		t.Errorf("Confidence >= 90 olmalı, alinan: %d", detail.VersionConfidence)
+	}
+	if detail.VersionSource != "raw_banner" {
+		t.Errorf("VersionSource 'raw_banner' olmalı, alinan: %s", detail.VersionSource)
+	}
+}
+

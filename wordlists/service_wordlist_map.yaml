@@ -12,6 +12,7 @@ quick:
   tomcat: "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache-Tomcat.txt"
   drupal: "wordlists/SecLists/Discovery/Web-Content/CMS/Drupal.txt"
   joomla: "wordlists/SecLists/Discovery/Web-Content/CMS/joomla-plugins.fuzz.txt"
+  sharepoint: "wordlists/SecLists/Discovery/Web-Content/CMS/Sharepoint-Ennumeration.txt"
   springboot: "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/Java-Spring-Boot.txt"
   php: "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/PHP.fuzz.txt"
   aspnet: "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/ASP.NET/CommonBackdoors-ASP.fuzz.txt"
@@ -19,6 +20,10 @@ quick:
   grafana: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Grafana.txt"
   elasticsearch: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Elasticsearch-Kibana.txt"
   swagger: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Swagger.txt"
+  api: "wordlists/api.txt"
+  nextjs: "wordlists/nextjs.txt"
+  django: "wordlists/django.txt"
+  rails: "wordlists/rails.txt"
   default: "wordlists/common.txt"
 
 # Full mod (SecLists kapsamlı listeleri) — --wordlist-size full ile aktif olur
@@ -39,5 +44,8 @@ full:
   grafana: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Grafana.txt"
   elasticsearch: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Elasticsearch-Kibana.txt"
   swagger: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Swagger.txt"
+  api: "wordlists/SecLists/Discovery/Web-Content/api/api-endpoints.txt"
+  nextjs: "wordlists/SecLists/Discovery/Web-Content/Frameworks/nextjs.txt"
+  django: "wordlists/SecLists/Discovery/Web-Content/Frameworks/django.txt"
+  rails: "wordlists/SecLists/Discovery/Web-Content/Frameworks/ruby-on-rails.txt"
   default: "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt"
-

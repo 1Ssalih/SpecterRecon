@@ -171,6 +171,7 @@
     .badge-low { background: rgba(14, 165, 233, 0.15); color: var(--low-color); border: 1px solid rgba(14, 165, 233, 0.3); }
     .badge-open { background: rgba(16, 185, 129, 0.15); color: var(--success-color); border: 1px solid rgba(16, 185, 129, 0.3); }
     .badge-dns { background: rgba(168, 85, 247, 0.15); color: var(--purple-accent); border: 1px solid rgba(168, 85, 247, 0.3); }
+    .badge-tech { background: rgba(56, 189, 248, 0.12); color: var(--cyan-accent); border: 1px solid rgba(56, 189, 248, 0.3); margin-right: 0.25rem; font-size: 0.65rem; }
     .code-tag {
       font-family: 'JetBrains Mono', monospace;
       background: #0d1117;
@@ -203,7 +204,7 @@
     <header>
       <div class="header-title">
         <h1>SpecterRecon SOC Güvenlik Raporu</h1>
-        <p>Otomatik Zafiyet & Keşif Analizi Sonuçları (Go Engine)</p>
+        <p>Otomatik Zafiyet & Keşif Analizi Sonuçları (Go Context-Aware Engine)</p>
       </div>
       <div class="header-meta">
         <div class="meta-item">Hedef: <span>{{ .Target }}</span></div>
@@ -285,7 +286,7 @@
               <th>Yöntem</th>
               <th>Açık Port</th>
               <th>Servis Adı</th>
-              <th>Versiyon / Başlık</th>
+              <th>Teknoloji & Versiyon</th>
               <th>Banner Detay</th>
             </tr>
           </thead>
@@ -300,15 +301,30 @@
                   <td><span class="badge badge-open">{{ .Port }}/{{ .Protocol }}</span></td>
                   <td><strong>{{ .ServiceName }}</strong></td>
                   <td>
+                    {{ if .DetectedTechs }}
+                      <div>
+                        {{ range .DetectedTechs }}
+                          <span class="badge badge-tech">{{ . }}</span>
+                        {{ end }}
+                      </div>
+                    {{ end }}
                     {{ if .ServiceVersion }}
-                      <span class="code-tag">{{ .ServiceVersion }}</span>
+                      <span class="code-tag" style="margin-top:0.25rem; display:inline-block;">v{{ .ServiceVersion }}</span>
                     {{ else if .HTTPTitle }}
-                      <span style="color:var(--cyan-accent)">{{ .HTTPTitle }}</span>
-                    {{ else }}
-                      <span style="color:var(--text-muted)">-</span>
+                      <span style="color:var(--cyan-accent); display:block; margin-top:0.2rem; font-size:0.75rem;">{{ .HTTPTitle }}</span>
+                    {{ end }}
+                    {{ if gt .VersionConfidence 0 }}
+                      <span style="display:block; font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">Güven: %{{ .VersionConfidence }} ({{ if .VersionSource }}{{ .VersionSource }}{{ else }}{{ .ProbeUsed }}{{ end }})</span>
                     {{ end }}
                   </td>
-                  <td><small style="color:var(--text-muted)">{{ if .BannerRaw }}{{ .BannerRaw }}{{ else }}-{{ end }}</small></td>
+                  <td>
+                    <small style="color:var(--text-muted)">{{ if .BannerRaw }}{{ .BannerRaw }}{{ else }}-{{ end }}</small>
+                    {{ if .SSLInfo }}
+                      {{ if .SSLInfo.Subject }}
+                        <div style="font-size:0.68rem; color:var(--cyan-accent); margin-top:0.2rem;">🔒 CN: {{ .SSLInfo.Subject }} ({{ .SSLInfo.TLSVersion }})</div>
+                      {{ end }}
+                    {{ end }}
+                  </td>
                 </tr>
                 {{ end }}
               {{ else }}
@@ -327,7 +343,7 @@
     <!-- Web Findings -->
     <div class="section-card">
       <div class="section-header">
-        <div class="section-title"><span>📁</span> Web Dizin & Dosya Bulguları (Fuzzer)</div>
+        <div class="section-title"><span>📁</span> Web Dizin & Dosya Bulguları (Context-Aware Fuzzer)</div>
         <span class="section-badge">{{ .TotalFindings }} Bulgu</span>
       </div>
       <div class="table-container">
@@ -350,6 +366,8 @@
                       <span class="badge badge-open">200 OK</span>
                     {{ else if or (eq .StatusCode 301) (eq .StatusCode 302) }}
                       <span class="badge badge-high">{{ .StatusCode }} REDIR</span>
+                    {{ else if or (eq .StatusCode 401) (eq .StatusCode 403) }}
+                      <span class="badge badge-crit">{{ .StatusCode }} DENIED</span>
                     {{ else }}
                       <span class="badge badge-low">{{ .StatusCode }}</span>
                     {{ end }}
@@ -367,7 +385,13 @@
                   </td>
                   <td>
                     {{ if .IsSensitive }}
-                      <span class="badge badge-crit">⚠️ HASSAS DOSYA</span>
+                      {{ if or (eq .StatusCode 401) (eq .StatusCode 403) }}
+                        <span class="badge badge-crit">⚠️ HASSAS (403/401)</span>
+                      {{ else }}
+                        <span class="badge badge-crit">⚠️ HASSAS DOSYA</span>
+                      {{ end }}
+                    {{ else if .MatchedTech }}
+                      <span class="badge badge-dns">📁 {{ .MatchedTech }}</span>
                     {{ else if .WordlistMatched }}
                       <span class="badge badge-dns">📁 {{ .WordlistMatched }}</span>
                     {{ else }}

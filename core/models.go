@@ -32,21 +32,58 @@ type PortInfo struct {
 	ResponseTimeMs *float64 `json:"response_time_ms,omitempty"`
 }
 
+// VersionEvidence represents an evidence item used for service version determination.
+type VersionEvidence struct {
+	Source     string `json:"source"`
+	Detail     string `json:"detail"`
+	Confidence int    `json:"confidence"`
+}
+
+// SSLServiceInfo represents TLS/SSL metadata observed during service discovery.
+type SSLServiceInfo struct {
+	TLSVersion    string   `json:"tls_version,omitempty"`
+	CipherSuite   string   `json:"cipher_suite,omitempty"`
+	Subject       string   `json:"subject,omitempty"`
+	Issuer        string   `json:"issuer,omitempty"`
+	DNSNames      []string `json:"dns_names,omitempty"`
+	NotBefore     string   `json:"not_before,omitempty"`
+	NotAfter      string   `json:"not_after,omitempty"`
+	ObservedHints []string `json:"observed_hints,omitempty"`
+}
+
+// ProbeResult represents the internal result of active or passive protocol probing.
+type ProbeResult struct {
+	ServiceName string
+	ServiceDesc string
+	Version     string
+	Banner      string
+	ProbeUsed   string
+	Confidence  int
+	Evidence    []VersionEvidence
+	SSLInfo     *SSLServiceInfo
+	IsFinal     bool
+}
+
 // ServiceDetail represents detailed banner & version information.
 type ServiceDetail struct {
-	IP                 string                 `json:"ip"`
-	Port               int                    `json:"port"`
-	Protocol           string                 `json:"protocol"`
-	ServiceName        string                 `json:"service_name"`
-	ServiceDescription string                 `json:"service_description,omitempty"`
-	ServiceVersion     string                 `json:"service_version,omitempty"`
-	BannerRaw          string                 `json:"banner_raw,omitempty"`
-	HTTPTitle          string                 `json:"http_title,omitempty"`
-	HTTPServer         string                 `json:"http_server,omitempty"`
-	HTTPTechnologies   []string               `json:"http_technologies"`
-	SSLEnabled         bool                   `json:"ssl_enabled"`
-	SSLInfo            map[string]interface{} `json:"ssl_info,omitempty"`
-	State              string                 `json:"state"`
+	IP                 string            `json:"ip"`
+	Port               int               `json:"port"`
+	Protocol           string            `json:"protocol"`
+	ServiceName        string            `json:"service_name"`
+	ServiceDescription string            `json:"service_description,omitempty"`
+	ServiceVersion     string            `json:"service_version,omitempty"`
+	BannerRaw          string            `json:"banner_raw,omitempty"`
+	HTTPTitle          string            `json:"http_title,omitempty"`
+	HTTPServer         string            `json:"http_server,omitempty"`
+	HTTPTechnologies   []string          `json:"http_technologies"`
+	DetectedTechs      []string          `json:"detected_techs,omitempty"`
+	VersionSource      string            `json:"version_source,omitempty"`
+	VersionConfidence  int               `json:"version_confidence,omitempty"`
+	ProbeUsed          string            `json:"probe_used,omitempty"`
+	Evidence           []VersionEvidence `json:"evidence,omitempty"`
+	SSLEnabled         bool              `json:"ssl_enabled"`
+	SSLInfo            *SSLServiceInfo   `json:"ssl_info,omitempty"`
+	State              string            `json:"state"`
 }
 
 // DirFuzzFinding represents an identified web path or file.
@@ -60,6 +97,7 @@ type DirFuzzFinding struct {
 	ResponseTimeMs   *float64 `json:"response_time_ms,omitempty"`
 	IsSensitive      bool     `json:"is_sensitive"`
 	WordlistMatched  string   `json:"wordlist_matched,omitempty"`
+	MatchedTech      string   `json:"matched_tech,omitempty"`
 }
 
 // --- Genişletilmiş Pasif Recon Struct'ları ---

@@ -2,6 +2,7 @@ package modules
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/specter-recon/recon-tool/core"
+	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 )
 
@@ -64,23 +66,51 @@ func LoadServiceWordlistMap(mapFile, sizeMode string) map[string]string {
 	if len(result) == 0 {
 		if strings.ToLower(sizeMode) == "full" {
 			result = map[string]string{
-				"jenkins":   "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Jenkins-Hudson.txt",
-				"apache":    "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache.txt",
-				"iis":       "wordlists/SecLists/Discovery/Web-Content/Web-Servers/IIS.txt",
-				"nginx":     "wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt",
-				"tomcat":    "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache-Tomcat.txt",
-				"wordpress": "wordlists/SecLists/Discovery/Web-Content/CMS/wordpress.fuzz.txt",
-				"default":   "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt",
+				"jenkins":       "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Jenkins-Hudson.txt",
+				"apache":        "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache.txt",
+				"iis":           "wordlists/SecLists/Discovery/Web-Content/Web-Servers/IIS.txt",
+				"nginx":         "wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt",
+				"tomcat":        "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache-Tomcat.txt",
+				"wordpress":     "wordlists/SecLists/Discovery/Web-Content/CMS/wordpress.fuzz.txt",
+				"drupal":        "wordlists/SecLists/Discovery/Web-Content/CMS/Drupal.txt",
+				"joomla":        "wordlists/SecLists/Discovery/Web-Content/CMS/joomla-plugins.fuzz.txt",
+				"sharepoint":    "wordlists/SecLists/Discovery/Web-Content/CMS/Sharepoint-Ennumeration.txt",
+				"springboot":    "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/Java-Spring-Boot.txt",
+				"php":           "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/PHP.fuzz.txt",
+				"aspnet":        "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/ASP.NET/CommonBackdoors-ASP.fuzz.txt",
+				"gitlab":        "wordlists/SecLists/Discovery/Web-Content/Service-Specific/GitLab.txt",
+				"grafana":       "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Grafana.txt",
+				"elasticsearch": "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Elasticsearch-Kibana.txt",
+				"swagger":       "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Swagger.txt",
+				"api":           "wordlists/SecLists/Discovery/Web-Content/api/api-endpoints.txt",
+				"nextjs":        "wordlists/SecLists/Discovery/Web-Content/Frameworks/nextjs.txt",
+				"django":        "wordlists/SecLists/Discovery/Web-Content/Frameworks/django.txt",
+				"rails":         "wordlists/SecLists/Discovery/Web-Content/Frameworks/ruby-on-rails.txt",
+				"default":       "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt",
 			}
 		} else {
 			result = map[string]string{
-				"jenkins":   "wordlists/jenkins.txt",
-				"apache":    "wordlists/apache.txt",
-				"wordpress": "wordlists/wordpress.txt",
-				"iis":       "wordlists/SecLists/Discovery/Web-Content/Web-Servers/IIS.txt",
-				"nginx":     "wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt",
-				"tomcat":    "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache-Tomcat.txt",
-				"default":   "wordlists/common.txt",
+				"jenkins":       "wordlists/jenkins.txt",
+				"apache":        "wordlists/apache.txt",
+				"wordpress":     "wordlists/wordpress.txt",
+				"iis":           "wordlists/SecLists/Discovery/Web-Content/Web-Servers/IIS.txt",
+				"nginx":         "wordlists/SecLists/Discovery/Web-Content/Web-Servers/nginx.txt",
+				"tomcat":        "wordlists/SecLists/Discovery/Web-Content/Web-Servers/Apache-Tomcat.txt",
+				"drupal":        "wordlists/SecLists/Discovery/Web-Content/CMS/Drupal.txt",
+				"joomla":        "wordlists/SecLists/Discovery/Web-Content/CMS/joomla-plugins.fuzz.txt",
+				"sharepoint":    "wordlists/SecLists/Discovery/Web-Content/CMS/Sharepoint-Ennumeration.txt",
+				"springboot":    "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/Java-Spring-Boot.txt",
+				"php":           "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/PHP.fuzz.txt",
+				"aspnet":        "wordlists/SecLists/Discovery/Web-Content/Programming-Language-Specific/ASP.NET/CommonBackdoors-ASP.fuzz.txt",
+				"gitlab":        "wordlists/SecLists/Discovery/Web-Content/Service-Specific/GitLab.txt",
+				"grafana":       "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Grafana.txt",
+				"elasticsearch": "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Elasticsearch-Kibana.txt",
+				"swagger":       "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Swagger.txt",
+				"api":           "wordlists/api.txt",
+				"nextjs":        "wordlists/nextjs.txt",
+				"django":        "wordlists/django.txt",
+				"rails":         "wordlists/rails.txt",
+				"default":       "wordlists/common.txt",
 			}
 		}
 	}
@@ -88,8 +118,25 @@ func LoadServiceWordlistMap(mapFile, sizeMode string) map[string]string {
 	return result
 }
 
-// SelectWordlistForService selects the most relevant wordlist for a detected HTTP service.
-func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]string, defaultWordlist string) (string, string) {
+// MergeUnique combines multiple string slices into a single deduplicated slice, preserving order.
+func MergeUnique(lists ...[]string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, list := range lists {
+		for _, item := range list {
+			trimmed := strings.TrimSpace(item)
+			trimmed = strings.TrimPrefix(trimmed, "/")
+			if trimmed != "" && !strings.HasPrefix(trimmed, "#") && !seen[trimmed] {
+				seen[trimmed] = true
+				result = append(result, trimmed)
+			}
+		}
+	}
+	return result
+}
+
+// SelectWordlistForService selects the most relevant wordlist(s) for a detected HTTP service using a Tiered Priority System.
+func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]string, defaultWordlist string) ([]string, string) {
 	if defaultWordlist == "" {
 		defaultWordlist = "wordlists/common.txt"
 	}
@@ -97,75 +144,113 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 		wordlistMap = LoadServiceWordlistMap("", "quick")
 	}
 
-	haystack := strings.ToLower(fmt.Sprintf("%s %s %s %s %s",
+	haystack := strings.ToLower(fmt.Sprintf("%s %s %s %s %s %s %s",
 		svc.ServiceName,
 		svc.ServiceDescription,
 		svc.HTTPTitle,
 		svc.HTTPServer,
 		strings.Join(svc.HTTPTechnologies, " "),
+		strings.Join(svc.DetectedTechs, " "),
+		svc.BannerRaw,
 	))
 
-	// Fixed priority order — specific CMS and servers first
-	priorityOrder := []string{
-		"wordpress", "jenkins", "apache", "nginx", "tomcat", "iis", "drupal", "joomla",
-		"sharepoint", "springboot", "php", "aspnet", "gitlab", "grafana", "elasticsearch", "swagger", "api",
+	// Tiered Priority System:
+	// Tier 1: High-Value Applications (CMS, CI/CD, DevOps Dashboards)
+	// Tier 2: Frameworks & APIs (Spring Boot, Django, Rails, ASP.NET, PHP, Swagger, APIs, Next.js)
+	// Tier 3: Dedicated Services (Elasticsearch, Kibana)
+	// Tier 4: Underlying Web Servers / Infrastructure (Tomcat, IIS, Apache, Nginx, Lighttpd, Werkzeug)
+	tiers := [][]string{
+		{"jenkins", "gitlab", "grafana", "wordpress", "drupal", "joomla", "sharepoint"},
+		{"springboot", "django", "rails", "aspnet", "php", "swagger", "api", "nextjs"},
+		{"elasticsearch"},
+		{"tomcat", "iis", "apache", "nginx", "lighttpd", "werkzeug"},
 	}
 
-	for _, key := range priorityOrder {
-		path, ok := wordlistMap[key]
-		if !ok {
-			continue
+	matchFoundInHaystack := func(key string) bool {
+		switch key {
+		case "springboot":
+			return strings.Contains(haystack, "springboot") || strings.Contains(haystack, "spring-boot") || strings.Contains(haystack, "spring") || strings.Contains(haystack, "whitelabel error page") || strings.Contains(haystack, "x-application-context")
+		case "aspnet":
+			return strings.Contains(haystack, "asp.net") || strings.Contains(haystack, "aspnet") || strings.Contains(haystack, "__viewstate") || strings.Contains(haystack, "x-aspnet")
+		case "iis":
+			return strings.Contains(haystack, "iis") || strings.Contains(haystack, "microsoft-iis")
+		case "nextjs":
+			return strings.Contains(haystack, "nextjs") || strings.Contains(haystack, "next.js") || strings.Contains(haystack, "__next_data__") || strings.Contains(haystack, "/_next/")
+		case "rails":
+			return strings.Contains(haystack, "rails") || strings.Contains(haystack, "ruby on rails") || strings.Contains(haystack, "turbolinks")
+		case "django":
+			return strings.Contains(haystack, "django") || strings.Contains(haystack, "csrfmiddlewaretoken")
+		case "swagger":
+			return strings.Contains(haystack, "swagger") || strings.Contains(haystack, "openapi")
+		case "api":
+			return strings.Contains(haystack, "api") || strings.Contains(haystack, "rest") || strings.Contains(haystack, "graphql")
+		default:
+			return strings.Contains(haystack, key)
 		}
+	}
 
-		matched := false
-		if key == "springboot" {
-			matched = strings.Contains(haystack, "spring") || strings.Contains(haystack, "boot")
-		} else if key == "aspnet" {
-			matched = strings.Contains(haystack, "asp.net") || strings.Contains(haystack, "aspnet")
-		} else if key == "iis" {
-			matched = strings.Contains(haystack, "iis") || strings.Contains(haystack, "microsoft-iis")
-		} else {
-			matched = strings.Contains(haystack, key)
-		}
+	var selectedLists []string
+	var matchedKeys []string
+	seenPaths := make(map[string]bool)
 
-		if matched {
-			if _, err := os.Stat(path); err == nil {
-				return path, key
+	for _, tier := range tiers {
+		for _, key := range tier {
+			if matchFoundInHaystack(key) {
+				if path, ok := wordlistMap[key]; ok {
+					if _, err := os.Stat(path); err == nil {
+						if !seenPaths[path] {
+							seenPaths[path] = true
+							selectedLists = append(selectedLists, path)
+							matchedKeys = append(matchedKeys, key)
+						}
+						break // Match found in this tier; continue scanning other tiers!
+					} else {
+						core.LogWarning("Wordlist bulunamadı: %s (kategori: %s)", path, key)
+					}
+				}
 			}
-			core.LogWarning("Wordlist bulunamadı: %s (kategori: %s), varsayılana düşülüyor", path, key)
 		}
 	}
 
-	// Check any other custom keys in the map
+	// Check any custom keys in wordlistMap not in predefined tiers
 	for key, path := range wordlistMap {
 		if key == "default" {
 			continue
 		}
-		alreadyChecked := false
-		for _, pk := range priorityOrder {
-			if pk == key {
-				alreadyChecked = true
+		isPredefined := false
+		for _, tier := range tiers {
+			for _, tk := range tier {
+				if tk == key {
+					isPredefined = true
+					break
+				}
+			}
+			if isPredefined {
 				break
 			}
 		}
-		if alreadyChecked {
-			continue
-		}
-		if strings.Contains(haystack, strings.ToLower(key)) {
+		if !isPredefined && matchFoundInHaystack(key) {
 			if _, err := os.Stat(path); err == nil {
-				return path, key
+				if !seenPaths[path] {
+					seenPaths[path] = true
+					selectedLists = append(selectedLists, path)
+					matchedKeys = append(matchedKeys, key)
+				}
 			}
-			core.LogWarning("Wordlist bulunamadı: %s (kategori: %s), varsayılana düşülüyor", path, key)
 		}
+	}
+
+	if len(selectedLists) > 0 {
+		return selectedLists, strings.Join(matchedKeys, "+")
 	}
 
 	if defPath, ok := wordlistMap["default"]; ok {
 		if _, err := os.Stat(defPath); err == nil {
-			return defPath, "default"
+			return []string{defPath}, "default"
 		}
 	}
 
-	return defaultWordlist, "common"
+	return []string{defaultWordlist}, "common"
 }
 
 // LoadWordlist reads paths from wordlist file.
@@ -198,10 +283,10 @@ func isSensitivePath(path string) bool {
 	return false
 }
 
-// FuzzSingleURL requests a single path and evaluates response.
-func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFilter map[int]bool, delayMs int) *core.DirFuzzFinding {
-	if delayMs > 0 {
-		time.Sleep(time.Duration(delayMs) * time.Millisecond)
+// FuzzSingleURL requests a single path and evaluates response with rate limiter support.
+func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFilter map[int]bool, limiter *rate.Limiter) *core.DirFuzzFinding {
+	if limiter != nil {
+		_ = limiter.Wait(context.Background())
 	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), path)
@@ -240,6 +325,15 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 		location := resp.Header.Get("Location")
 		isSensitive := isSensitivePath(path)
 
+		// If sensitive keyword matched and status is 401 Unauthorized or 403 Forbidden
+		if isSensitive && (resp.StatusCode == 401 || resp.StatusCode == 403) {
+			if title == "" {
+				title = "Potential Sensitive File (Access Denied)"
+			} else {
+				title = title + " [Access Denied]"
+			}
+		}
+
 		return &core.DirFuzzFinding{
 			URL:              url,
 			Path:             "/" + path,
@@ -250,13 +344,14 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 			ResponseTimeMs:   &latency,
 			IsSensitive:      isSensitive,
 			WordlistMatched:  matchTag,
+			MatchedTech:      matchTag,
 		}
 	}
 
 	return nil
 }
 
-// FuzzTargetService runs concurrent directory fuzzing against a single base URL.
+// FuzzTargetService runs concurrent directory fuzzing against a single base URL with token bucket rate limiting.
 func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concurrency int, delayMs int) []core.DirFuzzFinding {
 	totalWords := len(wordlist)
 	core.LogInfo("Dizin Taraması başlatılıyor: Hedef='%s', Liste='%s', Kelime Sayısı=%d", baseURL, matchTag, totalWords)
@@ -264,6 +359,13 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 
 	if concurrency <= 0 {
 		concurrency = 25
+	}
+
+	// Global Token Bucket Rate Limiter
+	var limiter *rate.Limiter
+	if delayMs > 0 {
+		r := rate.Limit(1000.0 / float64(delayMs))
+		limiter = rate.NewLimiter(r, 1)
 	}
 
 	statusFilter := map[int]bool{
@@ -302,7 +404,7 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 		go func() {
 			defer wg.Done()
 			for w := range wordChan {
-				res := FuzzSingleURL(client, baseURL, w, matchTag, statusFilter, delayMs)
+				res := FuzzSingleURL(client, baseURL, w, matchTag, statusFilter, limiter)
 				curr := atomic.AddInt64(&processedCount, 1)
 
 				if res != nil {
@@ -312,7 +414,11 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 
 					tag := ""
 					if res.IsSensitive {
-						tag = " [KRİTİK DOSYA]"
+						if res.StatusCode == 401 || res.StatusCode == 403 {
+							tag = " [KRİTİK DOSYA - ERİŞİM ENGELLENDİ]"
+						} else {
+							tag = " [KRİTİK DOSYA]"
+						}
 					}
 					core.LogSuccess("Dizin Bulundu: [%d] %s (Boyut: %dB)%s", res.StatusCode, res.URL, res.ContentLength, tag)
 				}
@@ -349,7 +455,7 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 	return findings
 }
 
-// RunDirFuzzing orchestrates directory fuzzing across all open HTTP/HTTPS services with smart wordlists.
+// RunDirFuzzing orchestrates directory fuzzing across all open HTTP/HTTPS services with smart multi-list unioning.
 func RunDirFuzzing(services []core.ServiceDetail, wordlistSizeMode string, defaultWordlist, sensitivePath string, concurrency int, delayMs int, outputJSON, outputTxt string) ([]core.DirFuzzFinding, error) {
 	if wordlistSizeMode == "" {
 		wordlistSizeMode = "quick"
@@ -392,21 +498,34 @@ func RunDirFuzzing(services []core.ServiceDetail, wordlistSizeMode string, defau
 		}
 		baseURL := fmt.Sprintf("%s://%s:%d", proto, svc.IP, svc.Port)
 
-		// Smart wordlist selection
-		selectedWordlistPath, matchKey := SelectWordlistForService(svc, wordlistMap, defaultWordlist)
-		serviceWords := LoadWordlist(selectedWordlistPath)
+		// Smart multi-list wordlist selection
+		selectedWordlistPaths, matchKey := SelectWordlistForService(svc, wordlistMap, defaultWordlist)
 
-		// Combine sensitive words with service words
-		seen := make(map[string]bool)
-		var combined []string
-		for _, w := range append(sensitiveWords, serviceWords...) {
-			if !seen[w] && w != "" {
-				seen[w] = true
-				combined = append(combined, w)
+		var wordlistsToMerge [][]string
+		wordlistsToMerge = append(wordlistsToMerge, sensitiveWords)
+
+		isCriticalPort := svc.Port == 80 || svc.Port == 443 || svc.Port == 8080 || svc.Port == 8443
+		if len(selectedWordlistPaths) > 1 && (wordlistSizeMode == "full" || isCriticalPort) {
+			// Multi-List Union: merge top 2 matched technologies
+			for i := 0; i < len(selectedWordlistPaths) && i < 2; i++ {
+				wordlistsToMerge = append(wordlistsToMerge, LoadWordlist(selectedWordlistPaths[i]))
 			}
+			if wordlistSizeMode == "full" {
+				wordlistsToMerge = append(wordlistsToMerge, LoadWordlist(defaultWordlist))
+			}
+		} else if len(selectedWordlistPaths) > 0 {
+			wordlistsToMerge = append(wordlistsToMerge, LoadWordlist(selectedWordlistPaths[0]))
+		} else {
+			wordlistsToMerge = append(wordlistsToMerge, LoadWordlist(defaultWordlist))
 		}
 
-		core.LogInfo("Servis '%s:%d' için wordlist seçildi: %s (%s, toplam %d kelime)", svc.IP, svc.Port, filepath.Base(selectedWordlistPath), matchKey, len(combined))
+		combined := MergeUnique(wordlistsToMerge...)
+
+		displayNames := make([]string, len(selectedWordlistPaths))
+		for idx, p := range selectedWordlistPaths {
+			displayNames[idx] = filepath.Base(p)
+		}
+		core.LogInfo("Servis '%s:%d' için wordlist seçildi: %s (%s, toplam %d kelime)", svc.IP, svc.Port, strings.Join(displayNames, "+"), matchKey, len(combined))
 
 		found := FuzzTargetService(baseURL, combined, matchKey, concurrency, delayMs)
 		allFindings = append(allFindings, found...)
@@ -421,3 +540,4 @@ func RunDirFuzzing(services []core.ServiceDetail, wordlistSizeMode string, defau
 
 	return allFindings, nil
 }
+

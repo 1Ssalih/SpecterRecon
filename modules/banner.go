@@ -1,15 +1,12 @@
 package modules
 
 import (
-	"bufio"
 	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,83 +20,190 @@ type ServiceRegexRule struct {
 	ServiceName string
 	Description string
 	ExtractVer  func(matches []string) string
+	Priority    int
+	Confidence  int
 }
 
 var ServiceRegexRules = []ServiceRegexRule{
-	// OpenSSH
+	// OpenSSH & SSH
 	{
-		Pattern:     regexp.MustCompile(`(?i)SSH-[\d\.]+-OpenSSH_([^\s]+)`),
+		Pattern:     regexp.MustCompile(`(?i)SSH-[\d\.]+-OpenSSH[_\s]([\w\.\-p]+)`),
 		ServiceName: "ssh",
 		Description: "OpenSSH",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    1,
+		Confidence:  95,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)SSH-[\d\.]+-Dropbear[_\s]([\d\.]+)`),
+		ServiceName: "ssh",
+		Description: "Dropbear SSH",
+		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    1,
+		Confidence:  90,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)SSH-[\d\.]+-libssh[_\s]([\w\.\-]+)`),
+		ServiceName: "ssh",
+		Description: "libssh",
+		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    2,
+		Confidence:  90,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)SSH-[\d\.]+-([^\r\n]+)`),
 		ServiceName: "ssh",
 		Description: "SSH Server",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    10,
+		Confidence:  75,
 	},
-	// HTTP Servers
+	// HTTP Servers & Web Frameworks
 	{
 		Pattern:     regexp.MustCompile(`(?i)Apache/([\d\.]+)`),
 		ServiceName: "http",
 		Description: "Apache HTTP Server",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    10,
+		Confidence:  85,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)nginx/([\d\.]+)`),
 		ServiceName: "http",
 		Description: "nginx",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    10,
+		Confidence:  85,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)Microsoft-IIS/([\d\.]+)`),
 		ServiceName: "http",
 		Description: "Microsoft IIS",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    10,
+		Confidence:  85,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)lighttpd/([\d\.]+)`),
 		ServiceName: "http",
 		Description: "lighttpd",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    10,
+		Confidence:  85,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)Werkzeug/([\d\.]+)`),
 		ServiceName: "http",
 		Description: "Werkzeug (Python)",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    15,
+		Confidence:  80,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)PHP/([\d\.]+)`),
 		ServiceName: "http",
 		Description: "PHP",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    20,
+		Confidence:  80,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)Tomcat/([\d\.]+)`),
 		ServiceName: "http",
 		Description: "Apache Tomcat",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    10,
+		Confidence:  85,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)Spring-Boot(?:/([\d\.]+))?|Whitelabel Error Page|X-Application-Context`),
+		ServiceName: "http",
+		Description: "Spring Boot",
+		ExtractVer: func(m []string) string {
+			if len(m) > 1 {
+				return m[1]
+			}
+			return ""
+		},
+		Priority:   5,
+		Confidence: 85,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)Next\.js(?:/([\d\.]+))?|__NEXT_DATA__`),
+		ServiceName: "http",
+		Description: "Next.js",
+		ExtractVer: func(m []string) string {
+			if len(m) > 1 {
+				return m[1]
+			}
+			return ""
+		},
+		Priority:   5,
+		Confidence: 85,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)Django(?:/([\d\.]+))?`),
+		ServiceName: "http",
+		Description: "Django",
+		ExtractVer: func(m []string) string {
+			if len(m) > 1 {
+				return m[1]
+			}
+			return ""
+		},
+		Priority:   5,
+		Confidence: 85,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)Express(?:/([\d\.]+))?`),
+		ServiceName: "http",
+		Description: "Express (Node.js)",
+		ExtractVer: func(m []string) string {
+			if len(m) > 1 {
+				return m[1]
+			}
+			return ""
+		},
+		Priority:   15,
+		Confidence: 80,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)ASP\.NET(?:\s+Version:([\d\.]+))?`),
+		ServiceName: "http",
+		Description: "ASP.NET",
+		ExtractVer: func(m []string) string {
+			if len(m) > 1 {
+				return m[1]
+			}
+			return ""
+		},
+		Priority:   15,
+		Confidence: 80,
 	},
 	// FTP
 	{
-		Pattern:     regexp.MustCompile(`(?i)vsFTPd\s+([\d\.]+)`),
+		Pattern:     regexp.MustCompile(`(?i)vsftpd[\s/]?([\d\.]+)`),
 		ServiceName: "ftp",
 		Description: "vsftpd",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    1,
+		Confidence:  90,
 	},
 	{
-		Pattern:     regexp.MustCompile(`(?i)ProFTPD\s+([\d\.]+)`),
+		Pattern:     regexp.MustCompile(`(?i)ProFTPD[\s/]?([\d\.]+)`),
 		ServiceName: "ftp",
 		Description: "ProFTPD",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    1,
+		Confidence:  90,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)220[- ].*FileZilla Server ([\d\.]+)`),
 		ServiceName: "ftp",
 		Description: "FileZilla Server",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    1,
+		Confidence:  90,
 	},
 	// Databases
 	{
@@ -107,12 +211,24 @@ var ServiceRegexRules = []ServiceRegexRule{
 		ServiceName: "mysql",
 		Description: "MariaDB",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    1,
+		Confidence:  95,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)redis_version:([\d\.]+)`),
 		ServiceName: "redis",
 		Description: "Redis",
 		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    1,
+		Confidence:  95,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)VERSION\s+([\d\.]+)`),
+		ServiceName: "memcached",
+		Description: "Memcached",
+		ExtractVer:  func(m []string) string { return m[1] },
+		Priority:    1,
+		Confidence:  95,
 	},
 }
 
@@ -259,9 +375,21 @@ func ParseBinaryProtocolBanner(port int, buf []byte) (serviceName, description, 
 	return "", "", "", "", false
 }
 
-// ExtractVersionFromText extracts service and version from banner text using regexes.
+// ExtractVersionFromText extracts service and version from banner text using prioritized, confidence-rated regexes.
 func ExtractVersionFromText(text string) (serviceName, description, version string) {
 	sanitized := SanitizeBanner(text)
+	if sanitized == "" {
+		return "", "", ""
+	}
+
+	type matchCandidate struct {
+		rule     ServiceRegexRule
+		version  string
+		priority int
+		conf     int
+	}
+
+	var candidates []matchCandidate
 	for _, rule := range ServiceRegexRules {
 		matches := rule.Pattern.FindStringSubmatch(sanitized)
 		if len(matches) > 0 {
@@ -269,69 +397,48 @@ func ExtractVersionFromText(text string) (serviceName, description, version stri
 			if rule.ExtractVer != nil {
 				ver = rule.ExtractVer(matches)
 			}
-			return rule.ServiceName, rule.Description, SanitizeBanner(ver)
+			candidates = append(candidates, matchCandidate{
+				rule:     rule,
+				version:  SanitizeBanner(ver),
+				priority: rule.Priority,
+				conf:     rule.Confidence,
+			})
 		}
 	}
-	return "", "", ""
+
+	if len(candidates) == 0 {
+		return "", "", ""
+	}
+
+	// Pick lowest priority (highest importance) then highest confidence
+	best := candidates[0]
+	for _, c := range candidates[1:] {
+		if c.priority < best.priority {
+			best = c
+		} else if c.priority == best.priority && c.conf > best.conf {
+			best = c
+		}
+	}
+
+	return best.rule.ServiceName, best.rule.Description, best.version
 }
 
 // GrabRawSocketBanner connects to raw TCP socket and reads banner, handling binary protocols cleanly.
 func GrabRawSocketBanner(ip string, port int, timeout time.Duration) (banner string, parsedSvc string, parsedDesc string, parsedVer string) {
-	addr := net.JoinHostPort(ip, strconv.Itoa(port))
-	conn, err := net.DialTimeout("tcp", addr, timeout)
-	if err != nil {
-		return "", "", "", ""
-	}
-	defer conn.Close()
-
-	_ = conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
-	reader := bufio.NewReader(conn)
-	buf := make([]byte, 1024)
-	n, _ := reader.Read(buf)
-
-	if n > 0 {
-		sName, sDesc, sVer, myBanner, handled := ParseBinaryProtocolBanner(port, buf[:n])
-		if handled {
-			return myBanner, sName, sDesc, sVer
-		}
-		banner = SanitizeBanner(string(buf[:n]))
-	}
-
-	if banner == "" {
-		// Send probe
-		probe := "\r\n\r\n"
-		if port == 25 || port == 587 {
-			probe = "EHLO recon.local\r\n"
-		} else if port == 21 {
-			probe = "SYST\r\n"
-		} else if port == 6379 {
-			probe = "INFO\r\n"
-		}
-		_ = conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
-		_, _ = conn.Write([]byte(probe))
-		_ = conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
-		n, _ = reader.Read(buf)
-		if n > 0 {
-			sName, sDesc, sVer, myBanner, handled := ParseBinaryProtocolBanner(port, buf[:n])
-			if handled {
-				return myBanner, sName, sDesc, sVer
-			}
-			banner = SanitizeBanner(string(buf[:n]))
-		}
-	}
-
-	return banner, "", "", ""
+	probeRes := GrabServiceBanner(ip, port, timeout)
+	return probeRes.Banner, probeRes.ServiceName, probeRes.ServiceDesc, probeRes.Version
 }
 
 type HTTPProbeResult struct {
-	IsHTTP       bool
-	Server       string
-	Title        string
-	Technologies []string
-	Banner       string
+	IsHTTP        bool
+	Server        string
+	Title         string
+	Technologies  []string
+	DetectedTechs []string
+	Banner        string
 }
 
-// ProbeHTTPService checks if service is HTTP/HTTPS and extracts headers and title.
+// ProbeHTTPService checks if service is HTTP/HTTPS and extracts headers, title, and fingerprints body.
 func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HTTPProbeResult {
 	proto := "http"
 	if isSSL {
@@ -364,9 +471,18 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 
 	var allHeaders []string
 	var serverHeader string
+	detectedTechMap := make(map[string]bool)
+
+	addTech := func(tech string) {
+		clean := strings.ToLower(SanitizeBanner(tech))
+		if clean != "" && !detectedTechMap[clean] {
+			detectedTechMap[clean] = true
+		}
+	}
+
 	for k, vList := range resp.Header {
 		kLower := strings.ToLower(k)
-		if kLower == "server" || kLower == "x-powered-by" || kLower == "via" {
+		if kLower == "server" || kLower == "x-powered-by" || kLower == "via" || kLower == "x-aspnet-version" || kLower == "x-aspnetmvc-version" || kLower == "x-generator" {
 			for _, v := range vList {
 				cleanVal := SanitizeBanner(v)
 				if cleanVal != "" {
@@ -374,6 +490,66 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 					if kLower == "server" && serverHeader == "" {
 						serverHeader = cleanVal
 					}
+					vLower := strings.ToLower(cleanVal)
+					if strings.Contains(vLower, "apache") {
+						addTech("apache")
+					}
+					if strings.Contains(vLower, "nginx") {
+						addTech("nginx")
+					}
+					if strings.Contains(vLower, "iis") || strings.Contains(vLower, "microsoft-iis") {
+						addTech("iis")
+					}
+					if strings.Contains(vLower, "tomcat") {
+						addTech("tomcat")
+					}
+					if strings.Contains(vLower, "php") {
+						addTech("php")
+					}
+					if strings.Contains(vLower, "asp.net") {
+						addTech("aspnet")
+					}
+					if strings.Contains(vLower, "express") {
+						addTech("express")
+					}
+					if strings.Contains(vLower, "next.js") {
+						addTech("nextjs")
+					}
+					if strings.Contains(vLower, "django") {
+						addTech("django")
+					}
+					if strings.Contains(vLower, "ruby") || strings.Contains(vLower, "rails") || strings.Contains(vLower, "phusion passenger") {
+						addTech("rails")
+					}
+					if strings.Contains(vLower, "kestrel") {
+						addTech("aspnet")
+					}
+					if strings.Contains(vLower, "gunicorn") || strings.Contains(vLower, "uvicorn") || strings.Contains(vLower, "werkzeug") {
+						addTech("django")
+					}
+				}
+			}
+		}
+		if kLower == "set-cookie" {
+			for _, cv := range vList {
+				cvLower := strings.ToLower(cv)
+				if strings.Contains(cvLower, "csrftoken") || strings.Contains(cvLower, "django") {
+					addTech("django")
+				}
+				if strings.Contains(cvLower, "phpsessid") {
+					addTech("php")
+				}
+				if strings.Contains(cvLower, "jsessionid") {
+					addTech("tomcat")
+				}
+				if strings.Contains(cvLower, "asp.net_sessionid") {
+					addTech("aspnet")
+				}
+				if strings.Contains(cvLower, "grafana_session") {
+					addTech("grafana")
+				}
+				if strings.Contains(cvLower, "_gitlab_session") {
+					addTech("gitlab")
 				}
 			}
 		}
@@ -390,18 +566,110 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 		if len(title) > 100 {
 			title = title[:97] + "..."
 		}
+		tLower := strings.ToLower(title)
+		if strings.Contains(tLower, "jenkins") {
+			addTech("jenkins")
+		}
+		if strings.Contains(tLower, "grafana") {
+			addTech("grafana")
+		}
+		if strings.Contains(tLower, "gitlab") {
+			addTech("gitlab")
+		}
+		if strings.Contains(tLower, "swagger") {
+			addTech("swagger")
+			addTech("api")
+		}
+		if strings.Contains(tLower, "spring") {
+			addTech("springboot")
+		}
 	}
 
-	var techs []string
-	for _, h := range allHeaders {
-		techs = append(techs, h)
-	}
 	bodyLower := strings.ToLower(bodyStr)
-	if strings.Contains(bodyLower, "wp-content") || strings.Contains(bodyLower, "wordpress") {
-		techs = append(techs, "WordPress")
+
+	// 1. Meta Generator regex
+	metaGenRegex := regexp.MustCompile(`(?i)<meta\s+[^>]*name=["']generator["'][^>]*content=["']([^"']+)["']`)
+	for _, m := range metaGenRegex.FindAllStringSubmatch(bodyStr, -1) {
+		if len(m) > 1 {
+			genContent := strings.ToLower(m[1])
+			if strings.Contains(genContent, "wordpress") {
+				addTech("wordpress")
+			}
+			if strings.Contains(genContent, "drupal") {
+				addTech("drupal")
+			}
+			if strings.Contains(genContent, "joomla") {
+				addTech("joomla")
+			}
+			if strings.Contains(genContent, "sharepoint") {
+				addTech("sharepoint")
+			}
+			if strings.Contains(genContent, "gatsby") {
+				addTech("gatsby")
+			}
+			if strings.Contains(genContent, "hugo") {
+				addTech("hugo")
+			}
+			if strings.Contains(genContent, "next.js") {
+				addTech("nextjs")
+			}
+		}
 	}
-	if strings.Contains(bodyLower, "react") {
-		techs = append(techs, "React")
+
+	// 2. Specific framework & CMS body signatures
+	if strings.Contains(bodyLower, "/wp-includes/") || strings.Contains(bodyLower, "/wp-content/") || strings.Contains(bodyLower, "wp-json") {
+		addTech("wordpress")
+	}
+	if strings.Contains(bodyLower, "__next_data__") || strings.Contains(bodyLower, "/_next/static") || strings.Contains(bodyLower, "/_next/") {
+		addTech("nextjs")
+	}
+	if strings.Contains(bodyLower, "ng-app") || strings.Contains(bodyLower, "ng-version") || strings.Contains(bodyLower, "ng-controller") {
+		addTech("angular")
+	}
+	if strings.Contains(bodyLower, "data-reactroot") || strings.Contains(bodyLower, "__reactfiber") || strings.Contains(bodyLower, "react-dom") {
+		addTech("react")
+	}
+	if strings.Contains(bodyLower, "data-v-") || strings.Contains(bodyLower, "vue.js") {
+		addTech("vue")
+	}
+	if strings.Contains(bodyLower, "whitelabel error page") || strings.Contains(bodyLower, "this application has no explicit mapping for /error") || strings.Contains(bodyLower, "org.springframework.boot") {
+		addTech("springboot")
+	}
+	if strings.Contains(bodyLower, "csrfmiddlewaretoken") || strings.Contains(bodyLower, "django.contrib") {
+		addTech("django")
+	}
+	if strings.Contains(bodyLower, "authenticity_token") && strings.Contains(bodyLower, "csrf-param") {
+		addTech("rails")
+	}
+	if strings.Contains(bodyLower, "__viewstate") || strings.Contains(bodyLower, "__eventvalidation") {
+		addTech("aspnet")
+	}
+	if strings.Contains(bodyLower, "swagger-ui") || strings.Contains(bodyLower, "swagger.json") || strings.Contains(bodyLower, "openapi.json") || strings.Contains(bodyLower, "api-docs") {
+		addTech("swagger")
+		addTech("api")
+	}
+	if strings.Contains(bodyLower, "grafana-app") || strings.Contains(bodyLower, "window.grafanabootdata") {
+		addTech("grafana")
+	}
+	if strings.Contains(bodyLower, "gon.default_avatar_url") || strings.Contains(bodyLower, "gl-avatar") || strings.Contains(bodyLower, "gitlab-") {
+		addTech("gitlab")
+	}
+	if strings.Contains(bodyLower, "jenkins-head-icon") || strings.Contains(bodyLower, "jenkins_ver") || (strings.Contains(bodyLower, "<title>") && strings.Contains(bodyLower, "jenkins</title>")) {
+		addTech("jenkins")
+	}
+	if strings.Contains(bodyLower, "kbn-name") || strings.Contains(bodyLower, "kibana") {
+		addTech("elasticsearch")
+	}
+
+	var detectedTechs []string
+	for t := range detectedTechMap {
+		detectedTechs = append(detectedTechs, t)
+	}
+	sort.Strings(detectedTechs)
+
+	techs := append([]string{}, allHeaders...)
+	for _, dt := range detectedTechs {
+		techs = append(techs, dt)
 	}
 
 	fullServerCombined := strings.Join(allHeaders, " | ")
@@ -410,102 +678,230 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration) HT
 	}
 
 	return HTTPProbeResult{
-		IsHTTP:       true,
-		Server:       SanitizeBanner(fullServerCombined),
-		Title:        title,
-		Technologies: techs,
-		Banner:       SanitizeBanner(fmt.Sprintf("HTTP %d | Server: %s", resp.StatusCode, fullServerCombined)),
+		IsHTTP:        true,
+		Server:        SanitizeBanner(fullServerCombined),
+		Title:         title,
+		Technologies:  techs,
+		DetectedTechs: detectedTechs,
+		Banner:        SanitizeBanner(fmt.Sprintf("HTTP %d | Server: %s", resp.StatusCode, fullServerCombined)),
 	}
 }
 
-// AnalyzeService investigates a single port to identify full service details.
+func isLikelyTLSPort(port int) bool {
+	return port == 443 || port == 8443 || port == 9443 || port == 4443 || port == 10443 || port == 465 || port == 993 || port == 995
+}
+
+func shouldTryHTTP(port int, probeRes core.ProbeResult) bool {
+	// If a non-HTTP service was already identified with high confidence, do NOT send HTTP probe
+	if probeRes.ServiceName != "" && probeRes.ServiceName != "http" && probeRes.ServiceName != "https" && probeRes.Confidence >= 80 {
+		return false
+	}
+	// Common HTTP ports
+	httpPorts := map[int]bool{
+		80: true, 443: true, 8080: true, 8443: true, 8000: true, 8888: true, 9000: true, 3000: true, 5000: true,
+		8008: true, 8081: true, 8088: true, 7001: true, 7077: true, 9090: true, 9200: true, 9300: true, 50000: true,
+	}
+	if httpPorts[port] {
+		return true
+	}
+	// Check if banner contains HTTP keywords
+	bUpper := strings.ToUpper(probeRes.Banner)
+	if strings.Contains(bUpper, "HTTP/1.") || strings.Contains(bUpper, "HTTP/2") || strings.Contains(bUpper, "<HTML") || strings.Contains(bUpper, "SERVER:") || strings.Contains(bUpper, "LOCATION:") {
+		return true
+	}
+	// If service is completely unknown, try HTTP as fallback
+	if probeRes.ServiceName == "" {
+		return true
+	}
+	return false
+}
+
+// AnalyzeService investigates a single port to identify full service details with high accuracy and confidence.
 func AnalyzeService(portInfo core.PortInfo, timeout time.Duration) core.ServiceDetail {
 	ip := portInfo.IP
 	port := portInfo.Port
-	serviceName := portInfo.ServiceName
+	protocol := portInfo.Protocol
+	if protocol == "" {
+		protocol = "tcp"
+	}
+
+	// 1. Raw service probe & banner collection (Passive listen first, then minimal active probe)
+	probeRes := GrabServiceBanner(ip, port, timeout)
+
+	// 2. If raw probe produced a definite, high-confidence non-HTTP service, return immediately
+	if probeRes.ServiceName != "" && probeRes.Confidence >= 80 && probeRes.ServiceName != "http" && probeRes.ServiceName != "https" {
+		bannerRaw := SanitizeBanner(probeRes.Banner)
+		if len(bannerRaw) > 255 {
+			bannerRaw = bannerRaw[:252] + "..."
+		}
+		verSource := "raw_banner"
+		if strings.Contains(probeRes.ProbeUsed, "binary") {
+			verSource = "binary_parser"
+		}
+		return core.ServiceDetail{
+			IP:                 ip,
+			Port:               port,
+			Protocol:           protocol,
+			ServiceName:        probeRes.ServiceName,
+			ServiceDescription: probeRes.ServiceDesc,
+			ServiceVersion:     probeRes.Version,
+			BannerRaw:          bannerRaw,
+			VersionSource:      verSource,
+			VersionConfidence:  probeRes.Confidence,
+			ProbeUsed:          probeRes.ProbeUsed,
+			Evidence:           probeRes.Evidence,
+			SSLEnabled:         false,
+			State:              "open",
+		}
+	}
+
+	// 3. If port is likely TLS or service is not yet final, perform TLS probe
+	isTLS := isLikelyTLSPort(port)
+	if isTLS || probeRes.ServiceName == "" {
+		sslInfo := ProbeTLSService(ip, port, timeout)
+		if sslInfo != nil {
+			probeRes.SSLInfo = sslInfo
+			isTLS = true
+			probeRes.Evidence = append(probeRes.Evidence, core.VersionEvidence{
+				Source:     "tls_certificate",
+				Detail:     fmt.Sprintf("Subject: %s | Issuer: %s", sslInfo.Subject, sslInfo.Issuer),
+				Confidence: 35,
+			})
+			for _, h := range sslInfo.ObservedHints {
+				probeRes.Evidence = append(probeRes.Evidence, core.VersionEvidence{
+					Source:     "tls_hint",
+					Detail:     h,
+					Confidence: 40,
+				})
+			}
+		}
+	}
+
+	// 4. If HTTP is plausible, execute HTTP Probe
+	if shouldTryHTTP(port, probeRes) {
+		httpRes := ProbeHTTPService(ip, port, isTLS, timeout)
+		if !httpRes.IsHTTP && isTLS {
+			// Also test plain HTTP on TLS port (e.g. misconfigured dev servers)
+			httpRes = ProbeHTTPService(ip, port, false, 2*time.Second)
+		}
+
+		if httpRes.IsHTTP {
+			svcName := "http"
+			if isTLS {
+				svcName = "https"
+			}
+			svcDesc := ""
+			svcVer := ""
+			verSource := "http_header"
+			conf := 85
+
+			if httpRes.Server != "" {
+				sName, sDesc, sVer := ExtractVersionFromText(httpRes.Server)
+				if sName != "" {
+					svcDesc = sDesc
+					svcVer = sVer
+				}
+			}
+
+			if svcDesc == "" && len(httpRes.DetectedTechs) > 0 {
+				svcDesc = strings.Title(httpRes.DetectedTechs[0])
+			}
+			if svcDesc == "" {
+				svcDesc = "HTTP Web Service"
+			}
+
+			bannerRaw := httpRes.Banner
+			if probeRes.Banner != "" && !strings.Contains(bannerRaw, probeRes.Banner) {
+				bannerRaw = bannerRaw + " | " + probeRes.Banner
+			}
+			bannerRaw = SanitizeBanner(bannerRaw)
+			if len(bannerRaw) > 255 {
+				bannerRaw = bannerRaw[:252] + "..."
+			}
+
+			var evidences []core.VersionEvidence
+			evidences = append(evidences, probeRes.Evidence...)
+			if httpRes.Server != "" {
+				evidences = append(evidences, core.VersionEvidence{
+					Source:     "http_server_header",
+					Detail:     httpRes.Server,
+					Confidence: 85,
+				})
+			}
+			if httpRes.Title != "" {
+				evidences = append(evidences, core.VersionEvidence{
+					Source:     "http_title",
+					Detail:     httpRes.Title,
+					Confidence: 60,
+				})
+			}
+
+			return core.ServiceDetail{
+				IP:                 ip,
+				Port:               port,
+				Protocol:           protocol,
+				ServiceName:        svcName,
+				ServiceDescription: SanitizeBanner(svcDesc),
+				ServiceVersion:     SanitizeBanner(svcVer),
+				BannerRaw:          bannerRaw,
+				HTTPTitle:          SanitizeBanner(httpRes.Title),
+				HTTPServer:         SanitizeBanner(httpRes.Server),
+				HTTPTechnologies:   httpRes.Technologies,
+				DetectedTechs:      httpRes.DetectedTechs,
+				VersionSource:      verSource,
+				VersionConfidence:  conf,
+				ProbeUsed:          "http_probe",
+				Evidence:           evidences,
+				SSLEnabled:         isTLS,
+				SSLInfo:            probeRes.SSLInfo,
+				State:              "open",
+			}
+		}
+	}
+
+	// 5. Fallback for raw / unknown / generic services
+	serviceName := probeRes.ServiceName
+	if serviceName == "" {
+		serviceName = portInfo.ServiceName
+	}
 	if serviceName == "" {
 		serviceName = "unknown"
 	}
-
-	isSSL := port == 443 || port == 8443 || port == 9443
-	httpRes := ProbeHTTPService(ip, port, isSSL, timeout)
-	if !httpRes.IsHTTP && !isSSL {
-		// Test plain HTTP
-		httpRes = ProbeHTTPService(ip, port, false, 2*time.Second)
-	}
-
-	var (
-		serviceDesc    string
-		serviceVersion string
-		bannerRaw      string
-		httpTitle      string
-		httpServer     string
-		httpTechs      []string
-	)
-
-	if httpRes.IsHTTP {
-		if isSSL {
-			serviceName = "https"
-		} else {
-			serviceName = "http"
-		}
-		httpTitle = httpRes.Title
-		httpServer = httpRes.Server
-		httpTechs = httpRes.Technologies
-		bannerRaw = httpRes.Banner
-
-		if httpServer != "" {
-			sName, sDesc, sVer := ExtractVersionFromText(httpServer)
-			if sName != "" {
-				serviceDesc = sDesc
-				serviceVersion = sVer
-			}
-		}
-	}
-
-	if serviceVersion == "" {
-		rawBanner, parsedSvc, parsedDesc, parsedVer := GrabRawSocketBanner(ip, port, timeout)
-		if parsedSvc != "" {
-			serviceName = parsedSvc
-			serviceDesc = parsedDesc
-			serviceVersion = parsedVer
-			bannerRaw = rawBanner
-		} else if rawBanner != "" {
-			if bannerRaw != "" {
-				bannerRaw = bannerRaw + " | " + rawBanner
-			} else {
-				bannerRaw = rawBanner
-			}
-			sName, sDesc, sVer := ExtractVersionFromText(rawBanner)
-			if sName != "" {
-				serviceName = sName
-				serviceDesc = sDesc
-				serviceVersion = sVer
-			}
-		}
-	}
-
-	if serviceDesc == "" && serviceName != "" {
+	serviceDesc := probeRes.ServiceDesc
+	if serviceDesc == "" {
 		serviceDesc = strings.ToUpper(serviceName) + " Service"
 	}
-
-	bannerRaw = SanitizeBanner(bannerRaw)
+	serviceVersion := probeRes.Version
+	bannerRaw := SanitizeBanner(probeRes.Banner)
 	if len(bannerRaw) > 255 {
 		bannerRaw = bannerRaw[:252] + "..."
+	}
+
+	conf := probeRes.Confidence
+	if conf == 0 {
+		if serviceVersion != "" {
+			conf = 70
+		} else if serviceName != "unknown" {
+			conf = 50
+		} else {
+			conf = 20
+		}
 	}
 
 	return core.ServiceDetail{
 		IP:                 ip,
 		Port:               port,
-		Protocol:           portInfo.Protocol,
+		Protocol:           protocol,
 		ServiceName:        SanitizeBanner(serviceName),
 		ServiceDescription: SanitizeBanner(serviceDesc),
 		ServiceVersion:     SanitizeBanner(serviceVersion),
 		BannerRaw:          bannerRaw,
-		HTTPTitle:          SanitizeBanner(httpTitle),
-		HTTPServer:         SanitizeBanner(httpServer),
-		HTTPTechnologies:   httpTechs,
-		SSLEnabled:         isSSL,
+		VersionSource:      "raw_socket",
+		VersionConfidence:  conf,
+		ProbeUsed:          probeRes.ProbeUsed,
+		Evidence:           probeRes.Evidence,
+		SSLEnabled:         isTLS,
+		SSLInfo:            probeRes.SSLInfo,
 		State:              "open",
 	}
 }
