@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/pterm/pterm"
 	"github.com/specter-recon/recon-tool/core"
@@ -29,13 +30,25 @@ func StartInteractiveShell(rootCmd *cobra.Command) {
 	isInteractiveSession = true
 	core.PrintBanner(version)
 
-	pterm.DefaultBox.WithTitle("⚡ SPECTER-RECON İNTERAKTİF KONSOL MODU").
+	pterm.DefaultBox.
+		WithTitle("⚡ SPECTER-RECON INTERACTIVE CONSOLE").
+		WithTitleTopCenter().
 		WithBoxStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
-		Println("Her seferinde '.\\specter-recon.exe' yazmanıza gerek yok!\nDoğrudan komutlarınızı yazabilirsiniz.\n\nGüvenlik Guardrail'i: Komutlarınızda '--authorized' bayrağı kullanabilir\nya da komut çalıştırılırken hedef bazlı izin onayını yanıtlayabilirsiniz.\n\nÖrnekler:\n  - scan scanme.nmap.org\n  - fullscan scanme.nmap.org --authorized\n  - scan scanme.nmap.org --extended\n  - ssl scanme.nmap.org:443\n  - dirfuzz http://scanme.nmap.org --service apache --wordlist-size full\n  - help\n  - exit")
+		Println(
+			pterm.FgWhite.Sprint("İnteraktif Konsol Modu Aktif (Metasploit Style).\n") +
+				pterm.FgGray.Sprint("Doğrudan komutlarınızı yazabilirsiniz. 'exit' ile çıkabilir, 'help' ile kılavuzu görebilirsiniz.\n\n") +
+				pterm.FgLightCyan.Sprint("Hızlı Başlangıç Komutları:\n") +
+				pterm.FgCyan.Sprint("  • scan <hedef> --authorized               ") + pterm.FgGray.Sprint("➔ Temel Boru Hattı Taraması\n") +
+				pterm.FgCyan.Sprint("  • fullscan <hedef> --authorized           ") + pterm.FgGray.Sprint("➔ Genişletilmiş Tam Denetim (SSL/HTTP/SSH)\n") +
+				pterm.FgCyan.Sprint("  • scan <hedef> --wordlist-size full       ") + pterm.FgGray.Sprint("➔ SecLists Derin Web Dizin Fuzzing\n") +
+				pterm.FgCyan.Sprint("  • ssl <host:443>                          ") + pterm.FgGray.Sprint("➔ SSL/TLS Sertifika Audit\n") +
+				pterm.FgCyan.Sprint("  • dirfuzz <url> --service iis             ") + pterm.FgGray.Sprint("➔ Servise Özel Akıllı Fuzzing\n") +
+				pterm.FgCyan.Sprint("  • report -t \"Hedef Adı\"                 ") + pterm.FgGray.Sprint("➔ HTML Dashboard & Summary Üret"),
+		)
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
-		pterm.Print(pterm.FgCyan.Sprintf("\nspecter-recon > "))
+		pterm.Print(pterm.NewStyle(pterm.FgLightCyan, pterm.Bold).Sprintf("\nspecter-recon > "))
 		if !scanner.Scan() {
 			break
 		}
@@ -46,7 +59,7 @@ func StartInteractiveShell(rootCmd *cobra.Command) {
 		}
 
 		if line == "exit" || line == "quit" || line == "q" {
-			pterm.Println(pterm.FgYellow.Sprint("İnteraktif konsoldan çıkılıyor. Görüşmek üzere!"))
+			pterm.Println(pterm.FgYellow.Sprint("İnteraktif konsoldan çıkılıyor. İyi çalışmalar!"))
 			break
 		}
 
@@ -61,6 +74,15 @@ func StartInteractiveShell(rootCmd *cobra.Command) {
 			continue
 		}
 
+		// Smart prefix stripping: If user accidentally types ".\specter-recon.exe scan ..." or "specter-recon scan ..."
+		firstArg := strings.ToLower(cmdArgs[0])
+		if strings.HasSuffix(firstArg, "specter-recon.exe") || strings.HasSuffix(firstArg, "specter-recon") {
+			cmdArgs = cmdArgs[1:]
+			if len(cmdArgs) == 0 {
+				continue
+			}
+		}
+
 		// Reset authorizedFlag before command execution unless --authorized in args
 		hasAuthArg := false
 		for _, a := range cmdArgs {
@@ -72,8 +94,15 @@ func StartInteractiveShell(rootCmd *cobra.Command) {
 		authorizedFlag = hasAuthArg
 
 		// Execute root command with parsed args
+		startTime := time.Now()
 		rootCmd.SetArgs(cmdArgs)
 		_ = rootCmd.Execute()
+
+		// Print subtle elapsed time if it was a real command
+		elapsed := time.Since(startTime).Seconds()
+		if elapsed >= 0.5 {
+			core.LogInfo("Oturum Komutu Tamamlandı (%s) | Toplam Süre: %.2fs", cmdArgs[0], elapsed)
+		}
 	}
 }
 

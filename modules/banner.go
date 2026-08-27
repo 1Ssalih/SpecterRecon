@@ -123,17 +123,26 @@ func SanitizeBanner(s string) string {
 	}
 	var sb strings.Builder
 	for _, r := range s {
-		// Keep printable characters, space, tab, newline, carriage return and valid printable unicode
-		if (r >= 32 && r <= 126) || r == '\t' || r == '\n' || r == '\r' || (r > 127 && unicode.IsPrint(r)) {
+		// Keep only standard printable ASCII and valid printable letters/digits
+		if (r >= 32 && r <= 126) || (r > 127 && unicode.IsLetter(r)) || (r > 127 && unicode.IsDigit(r)) {
 			sb.WriteRune(r)
-		} else if r == 0 || r < 32 || r == 127 || r == 0xFFFD {
-			// Replace non-printable bytes with space
+		} else {
 			sb.WriteByte(' ')
 		}
 	}
-	// Normalize spaces
 	cleaned := strings.Join(strings.Fields(sb.String()), " ")
-	return strings.TrimSpace(cleaned)
+	// If after cleaning, there are no letters or digits, discard leftover punctuation or binary remnants
+	hasAlphaNum := false
+	for _, r := range cleaned {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			hasAlphaNum = true
+			break
+		}
+	}
+	if !hasAlphaNum {
+		return ""
+	}
+	return cleaned
 }
 
 // ParseMySQLHandshake parses the raw binary MySQL/MariaDB initial handshake packet.
@@ -191,6 +200,65 @@ func ParseMySQLHandshake(buf []byte) (serviceName, description, version, rawBann
 	return serviceName, description, version, rawBanner
 }
 
+// ParseBinaryProtocolBanner inspects raw binary socket responses for known binary protocols (NetBIOS, FSSO, VNC, etc.).
+func ParseBinaryProtocolBanner(port int, buf []byte) (serviceName, description, version, rawBanner string, handled bool) {
+	if len(buf) == 0 {
+		return "", "", "", "", false
+	}
+
+	// 1. MySQL Handshake
+	if port == 3306 || (len(buf) >= 5 && (buf[4] == 10 || buf[4] == 9)) {
+		sName, sDesc, sVer, myBanner := ParseMySQLHandshake(buf)
+		if sName != "" {
+			return sName, sDesc, sVer, myBanner, true
+		}
+	}
+
+	// 2. NetBIOS Session Service (Port 139 / 445 / Raw SMB)
+	if port == 139 || (len(buf) >= 4 && (buf[0] == 0x82 || buf[0] == 0x83 || buf[0] == 0x80 || buf[0] == 0x81)) {
+		return "netbios-ssn", "NetBIOS Session Service", "", "NetBIOS Session Service (SMB Transport)", true
+	}
+
+	// 3. Fortinet FSSO (Single Sign-On Agent / Collector)
+	bufStr := string(buf)
+	if strings.Contains(bufStr, "FSSO") || strings.Contains(bufStr, "Fortinet") {
+		ver := ""
+		re := regexp.MustCompile(`FSSO\s+([\d\.]+)`)
+		if m := re.FindStringSubmatch(bufStr); len(m) > 1 {
+			ver = m[1]
+		}
+		raw := "Fortinet FSSO Service"
+		if ver != "" {
+			raw = fmt.Sprintf("Fortinet Single Sign-On (FSSO v%s)", ver)
+		}
+		return "fsso", "Fortinet Single Sign-On Agent", ver, raw, true
+	}
+
+	// 4. RFB / VNC Protocol (e.g. "RFB 003.008\n", "RFB 005.000")
+	if strings.HasPrefix(bufStr, "RFB ") {
+		ver := ""
+		re := regexp.MustCompile(`RFB\s+([\d\.]+)`)
+		if m := re.FindStringSubmatch(bufStr); len(m) > 1 {
+			ver = m[1]
+		}
+		return "vnc", "VNC Remote Framebuffer", ver, SanitizeBanner(bufStr), true
+	}
+
+	// 5. Check if buffer is unprintable binary data
+	printableCount := 0
+	for _, b := range buf {
+		if b >= 32 && b <= 126 {
+			printableCount++
+		}
+	}
+	ratio := float64(printableCount) / float64(len(buf))
+	if ratio < 0.35 {
+		return "", "", "", "[Binary Protocol Response]", true
+	}
+
+	return "", "", "", "", false
+}
+
 // ExtractVersionFromText extracts service and version from banner text using regexes.
 func ExtractVersionFromText(text string) (serviceName, description, version string) {
 	sanitized := SanitizeBanner(text)
@@ -222,16 +290,12 @@ func GrabRawSocketBanner(ip string, port int, timeout time.Duration) (banner str
 	n, _ := reader.Read(buf)
 
 	if n > 0 {
-		// Check for binary MySQL Handshake
-		if port == 3306 || (n >= 5 && (buf[4] == 10 || buf[4] == 9)) {
-			sName, sDesc, sVer, myBanner := ParseMySQLHandshake(buf[:n])
-			if sName != "" {
-				return myBanner, sName, sDesc, sVer
-			}
+		sName, sDesc, sVer, myBanner, handled := ParseBinaryProtocolBanner(port, buf[:n])
+		if handled {
+			return myBanner, sName, sDesc, sVer
 		}
+		banner = SanitizeBanner(string(buf[:n]))
 	}
-
-	banner = SanitizeBanner(string(buf[:n]))
 
 	if banner == "" {
 		// Send probe
@@ -248,6 +312,10 @@ func GrabRawSocketBanner(ip string, port int, timeout time.Duration) (banner str
 		_ = conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
 		n, _ = reader.Read(buf)
 		if n > 0 {
+			sName, sDesc, sVer, myBanner, handled := ParseBinaryProtocolBanner(port, buf[:n])
+			if handled {
+				return myBanner, sName, sDesc, sVer
+			}
 			banner = SanitizeBanner(string(buf[:n]))
 		}
 	}

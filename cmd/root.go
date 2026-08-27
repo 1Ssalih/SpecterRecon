@@ -20,27 +20,39 @@ var (
 // RootCmd is the base command for SpecterRecon.
 var RootCmd = &cobra.Command{
 	Use:   "specter-recon",
-	Short: "SpecterRecon: Yüksek Performanslı ve Modüler Ağ Keşif (Recon) Motoru",
-	Long: `SpecterRecon, siber güvenlik araştırmacıları ve sızma testi ekipleri için
-geliştirilmiş, yüksek eşzamanlılıklı (Goroutine), modüler ve tam pipeline destekli
-ağ keşif (reconnaissance) aracıdır.
+	Short: "⚡ SpecterRecon: Yüksek Performanslı ve Modüler Ağ Keşif (Recon) Motoru",
+	Long: `SpecterRecon, siber güvenlik araştırmacıları, sızma testi ekipleri ve SOC analistleri için
+geliştirilmiş, yüksek eşzamanlılıklı (Goroutine Worker Pools), modüler ve tam boru hattı
+(pipeline) destekli yeni nesil ağ keşif (reconnaissance) motorudur.
 
-Çekirdek modüller: DNS Enumeration, Host Discovery, Port Scan, Banner Grabbing
-ve Web Directory Fuzzing (Akıllı Wordlist / SecLists).
+Çekirdek Keşif Modülleri:
+  • DNS & Subdomain Keşfi (Brute-Force & Reverse DNS)
+  • Çok Yöntemli Canlı Host Keşfi (ARP, ICMP Ping, TCP SYN Probe)
+  • Goroutine Destekli Hızlı TCP Connect Port Taraması
+  • Protokol ve Banner Ayrıştırma (HTTP, SSH, MySQL, NetBIOS, VNC, FTP, SMTP)
+  • Servise Özel Akıllı Web Dizin Fuzzing (SecLists Submodule Entegrasyonu)
 
-Opsiyonel genişletilmiş modüller (--extended): SSL/TLS Audit, HTTP Security Audit,
-SSH Konfigürasyon Audit.`,
-	Example: `  # İnteraktif Shell konsoluna gir
+Genişletilmiş Pasif Denetim Modülleri (--extended):
+  • SSL/TLS Sertifika Geçerlilik, SAN ve Zayıf Protokol Denetimi
+  • HTTP Güvenlik Başlıkları (Security Headers), CORS ve GraphQL Denetimi
+  • SSH Algoritma ve Güvenlik Konfigürasyon Denetimi`,
+	Example: `  # 1. İnteraktif Konsol Modu (Parametresiz Çalıştırma):
   specter-recon
 
-  # Hedef üzerinde tam keşif pipeline'ı çalıştır
+  # 2. Temel Boru Hattı Keşif Taraması (DNS + Discovery + Port + Banner + Web):
   specter-recon scan example.com --authorized
 
-  # Genişletilmiş audit modülleri ile çalıştır (SSL + HTTP + SSH)
-  specter-recon fullscan example.com --authorized
+  # 3. Subdomain Brute-Force ve Genişletilmiş Denetimlerle Tam Tarama:
+  specter-recon fullscan example.com --subdomains --authorized
 
-  # SecLists ile derin web dizin taraması
-  specter-recon dirfuzz http://example.com --wordlist-size full --authorized`,
+  # 4. SecLists ile Kapsamlı (30,000+ kelime) Web Dizin Taraması:
+  specter-recon scan example.com --wordlist-size full --authorized
+
+  # 5. Bağımsız Özel Port ve Thread Ayarlı Tarama:
+  specter-recon portscan 192.168.1.1 -p 1-1024 -t 100 --authorized
+
+  # 6. Servis Bazlı Akıllı Web Fuzzing (IIS, Nginx, Apache, Jenkins, WordPress):
+  specter-recon dirfuzz http://example.com --service iis --authorized`,
 	Run: func(cmd *cobra.Command, args []string) {
 		StartInteractiveShell(cmd)
 	},
@@ -54,7 +66,44 @@ func Execute() {
 }
 
 func init() {
-	RootCmd.PersistentFlags().BoolVar(&authorizedFlag, "authorized", false, "Hedef için yasal tarama izninizin olduğunu onaylar")
+	RootCmd.PersistentFlags().BoolVar(&authorizedFlag, "authorized", false, "Hedef için yasal tarama izninizin olduğunu onaylar (Guardrail Onayı)")
+
+	// Custom categorized help template
+	RootCmd.SetHelpTemplate(`
+{{.Long}}
+
+KULLANIM (USAGE):
+  {{.UseLine}}
+{{if .HasAvailableSubCommands}}
+KOMUT KATEGORİLERİ:
+  🚀 Keşif Pipeline Komutları:
+    scan        Hedef üzerinde tam otomatik DNS + Host + Port + Banner + Web pipeline'ı çalıştırır
+    fullscan    Tüm çekirdek ve genişletilmiş modülleri (SSL/HTTP/SSH) aktif ederek çalıştırır (scan --extended kısayolu)
+    shell       Metasploit tarzı interaktif konsol modunu başlatır
+
+  🔬 Bağımsız Keşif & Analiz Modülleri:
+    dns         Hedef domain için DNS çözümleme ve subdomain brute-force yapar
+    discover    Ağdaki canlı hostları tespit eder (ICMP / TCP Ping)
+    portscan    Hedefte yüksek hızlı TCP port taraması yapar
+    banner      Açık portlardan servis ve temiz versiyon banner'ı çeker
+    dirfuzz     Akıllı wordlist ve SecLists ile web dizin/dosya fuzzing yapar
+    ssl         SSL/TLS sertifika geçerliliği ve zayıf protokol denetimi yapar
+
+  📊 Raporlama & Yardımcılar:
+    report      Mevcut JSON tarama çıktılarından HTML dashboard ve summary.txt üretir
+    help        Herhangi bir komut hakkında detaylı yardım gösterir
+{{end}}
+{{if .HasAvailableLocalFlags}}BAYRAKLAR (FLAGS):
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}
+{{end}}
+{{if .HasAvailableInheritedFlags}}GLOBAL BAYRAKLAR:
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}
+{{end}}
+{{if .Example}}ÖRNEKLER (EXAMPLES):
+{{.Example}}
+{{end}}
+Detaylı modül yardımı için: specter-recon [komut] --help
+`)
 }
 
 func verifyScopePermission(target string) bool {

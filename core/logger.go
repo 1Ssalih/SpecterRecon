@@ -13,6 +13,11 @@ import (
 
 const DefaultAuditLogPath = "output/audit.log"
 
+// timestamp returns the current time in HH:MM:SS format for professional CLI logging.
+func timestamp() string {
+	return time.Now().Format("15:04:05")
+}
+
 // LogAudit writes an audit log line with timestamp and action to audit.log.
 func LogAudit(action, target, details, status string) {
 	if status == "" {
@@ -27,57 +32,86 @@ func LogAudit(action, target, details, status string) {
 	}
 	defer f.Close()
 
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	entry := fmt.Sprintf("%s [INFO] ACTION=%s | TARGET=%s | STATUS=%s | DETAILS=%s\n",
-		timestamp, action, target, status, details)
+	ts := time.Now().Format("2006-01-02 15:04:05")
+	entry := fmt.Sprintf("%s [AUDIT] ACTION=%-24s | TARGET=%-20s | STATUS=%-8s | DETAILS=%s\n",
+		ts, action, target, status, details)
 	_, _ = f.WriteString(entry)
 }
 
-// PrintBanner displays the ASCII banner.
+// PrintBanner displays the modern, high-tech ASCII logo and metadata badges.
 func PrintBanner(version string) {
-	bannerText := `  ____                  _             ____                     
- / ___| _ __   ___  ___| |_ ___ _ __ |  _ \ ___  ___ ___  _ __ 
- \___ \| '_ \ / _ \/ __| __/ _ \ '__|| |_) / _ \/ __/ _ \| '_ \ 
-  ___) | |_) |  __/ (__| ||  __/ |   |  _ <  __/ (_| (_) | | | |
- |____/| .__/ \___|\___|\__\___|_|   |_| \_\___|\___\___/|_| |_|
-       |_|                                                     
-   -- Universal Network & Application Security Assessment v` + version + ` --`
+	logo := `
+ ███████╗██████╗ ███████╗ ██████╗████████╗███████╗██████╗ 
+ ██╔════╝██╔══██╗██╔════╝██╔════╝╚══██╔══╝██╔════╝██╔══██╗
+ ███████╗██████╔╝█████╗  ██║        ██║   █████╗  ██████╔╝
+ ╚════██║██╔═══╝ ██╔══╝  ██║        ██║   ██╔══╝  ██╔══██╗
+ ███████║██║     ███████╗╚██████╗   ██║   ███████╗██║  ██║
+ ╚══════╝╚═╝     ╚══════╝ ╚═════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
+ ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
+ ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
+ ██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
+ ██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║
+ ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║
+ ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝`
+
+	subText := fmt.Sprintf(
+		"⚡ HIGH-PERFORMANCE NETWORK RECONNAISSANCE ENGINE (v%s)\n"+
+			"• Engine: Go Native Worker Pools • Wordlists: SecLists Submodule • Mode: Pure Recon",
+		version,
+	)
 
 	pterm.Println()
-	pterm.DefaultBox.WithTitle("SPECTERRECON").WithTitleTopCenter().
-		WithBoxStyle(pterm.NewStyle(pterm.FgCyan)).
-		Println(bannerText)
+	pterm.DefaultBox.
+		WithTitle("✦ SPECTER RECON ✦").
+		WithTitleTopCenter().
+		WithBoxStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
+		Println(pterm.FgLightCyan.Sprint(logo) + "\n\n" + pterm.FgGray.Sprint(subText))
 }
 
-// LogStep prints step header.
+// LogStep prints a structured, high-visibility section divider for pipeline modules.
 func LogStep(stepName string) {
 	pterm.Println()
-	pterm.DefaultSection.WithStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
-		Println(fmt.Sprintf("▸ %s", strings.ToUpper(stepName)))
+	title := fmt.Sprintf(" // %s ", strings.ToUpper(stepName))
+	totalWidth := 76
+	sideLen := (totalWidth - len(title)) / 2
+	if sideLen < 3 {
+		sideLen = 3
+	}
+	bar := strings.Repeat("═", sideLen)
+	header := fmt.Sprintf("%s%s%s", bar, title, bar)
+	pterm.Println(pterm.NewStyle(pterm.FgCyan, pterm.Bold).Sprint(header))
 }
 
-// LogInfo prints informational message.
+// LogInfo prints an informational status message with timestamp.
 func LogInfo(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	pterm.Info.Println(msg)
+	tag := pterm.NewStyle(pterm.FgDarkGray).Sprintf("[%s] ", timestamp()) +
+		pterm.NewStyle(pterm.FgCyan, pterm.Bold).Sprint("[*] INFO    ")
+	pterm.Println(tag + pterm.FgWhite.Sprint(msg))
 }
 
-// LogSuccess prints success message.
+// LogSuccess prints a successful finding or completed operation with timestamp.
 func LogSuccess(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	pterm.Success.Println(msg)
+	tag := pterm.NewStyle(pterm.FgDarkGray).Sprintf("[%s] ", timestamp()) +
+		pterm.NewStyle(pterm.FgLightGreen, pterm.Bold).Sprint("[+] SUCCESS ")
+	pterm.Println(tag + pterm.FgLightGreen.Sprint(msg))
 }
 
-// LogWarning prints warning message.
+// LogWarning prints a caution or non-critical warning message with timestamp.
 func LogWarning(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	pterm.Warning.Println(msg)
+	tag := pterm.NewStyle(pterm.FgDarkGray).Sprintf("[%s] ", timestamp()) +
+		pterm.NewStyle(pterm.FgYellow, pterm.Bold).Sprint("[!] WARNING ")
+	pterm.Println(tag + pterm.FgYellow.Sprint(msg))
 }
 
-// LogError prints error message.
+// LogError prints a critical error or failed operation message with timestamp.
 func LogError(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	pterm.Error.Println(msg)
+	tag := pterm.NewStyle(pterm.FgDarkGray).Sprintf("[%s] ", timestamp()) +
+		pterm.NewStyle(pterm.FgLightRed, pterm.Bold).Sprint("[-] ERROR   ")
+	pterm.Println(tag + pterm.FgLightRed.Sprint(msg))
 }
 
 // PrintDNSTable prints DNS enumeration and subdomain findings in a clean PTerm table.
@@ -183,8 +217,8 @@ func PrintServicesTable(services []ServiceDetail) {
 		}
 
 		banner := s.BannerRaw
-		if len(banner) > 40 {
-			banner = banner[:37] + "..."
+		if len(banner) > 42 {
+			banner = banner[:39] + "..."
 		}
 		if banner == "" {
 			banner = s.ServiceDescription
@@ -347,18 +381,18 @@ func PrintSummaryTable(report CompleteScanReport) {
 		{"Taranan Hedef", report.Target},
 	}
 	if report.ScanProfile != "" {
-		tableData = append(tableData, []string{"Tarama Profili", report.ScanProfile})
+		tableData = append(tableData, []string{"Tarama Profili", strings.ToUpper(report.ScanProfile)})
 	}
 	if report.TotalDNSRecords > 0 {
 		tableData = append(tableData, []string{"Çözümlenen DNS Kayıtları", strconv.Itoa(report.TotalDNSRecords)})
 	}
 	tableData = append(tableData, [][]string{
-		{"Keşfedilen Hostlar", strconv.Itoa(report.TotalHosts)},
-		{"Açık Portlar", strconv.Itoa(report.TotalOpenPorts)},
-		{"Web Dizin Bulguları", strconv.Itoa(report.TotalFindings)},
-		{"Toplam Süre", fmt.Sprintf("%.2f saniye", report.DurationSeconds)},
+		{"Keşfedilen Canlı Hostlar", strconv.Itoa(report.TotalHosts)},
+		{"Açık Port Sayısı", strconv.Itoa(report.TotalOpenPorts)},
+		{"Web Dizin / Dosya Bulguları", strconv.Itoa(report.TotalFindings)},
+		{"Toplam Tarama Süresi", fmt.Sprintf("%.2f saniye", report.DurationSeconds)},
 		{"Özet Dosyası (TXT)", "output/summary.txt"},
-		{"HTML Rapor Dosyası", "output/report.html"},
+		{"HTML Dashboard Raporu", "output/report.html"},
 	}...)
 
 	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).

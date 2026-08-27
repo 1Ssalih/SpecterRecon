@@ -140,6 +140,35 @@ func TestParseMySQLHandshake(t *testing.T) {
 	}
 }
 
+func TestParseBinaryProtocolBanner(t *testing.T) {
+	// 1. NetBIOS Port 139 Session
+	mockNetBIOS := []byte{0x82, 0x00, 0x00, 0x00}
+	sName, sDesc, _, banner, handled := ParseBinaryProtocolBanner(139, mockNetBIOS)
+	if !handled || sName != "netbios-ssn" {
+		t.Errorf("NetBIOS paketi taninamadi: handled=%v, sName=%s", handled, sName)
+	}
+	if !strings.Contains(sDesc, "NetBIOS") || !strings.Contains(banner, "NetBIOS") {
+		t.Errorf("NetBIOS banner hatali: desc=%s, banner=%s", sDesc, banner)
+	}
+
+	// 2. Fortinet FSSO Port 8000
+	mockFSSO := []byte{0x5a, 0x01, 'F', 'S', 'S', 'O', ' ', '5', '.', '0', '.', '0', '3', '1', '9', 0x00, 0x02}
+	sName2, _, ver2, banner2, handled2 := ParseBinaryProtocolBanner(8000, mockFSSO)
+	if !handled2 || sName2 != "fsso" {
+		t.Errorf("FSSO paketi taninamadi: handled=%v, sName=%s", handled2, sName2)
+	}
+	if ver2 != "5.0.0319" || !strings.Contains(banner2, "FSSO") {
+		t.Errorf("FSSO versiyon/banner hatali: ver=%s, banner=%s", ver2, banner2)
+	}
+
+	// 3. Unprintable random binary junk
+	junk := []byte{0x01, 0x02, 0x03, 0x04, 0x80, 0x90, 0xfe, 0xff}
+	_, _, _, banner3, handled3 := ParseBinaryProtocolBanner(5555, junk)
+	if !handled3 || !strings.Contains(banner3, "[Binary Protocol Response]") {
+		t.Errorf("Binary junk filtrelenemedi: handled=%v, banner=%s", handled3, banner3)
+	}
+}
+
 func TestWordlistSizeMode(t *testing.T) {
 	quickMap := LoadServiceWordlistMap("", "quick")
 	if quickMap == nil || len(quickMap) == 0 {

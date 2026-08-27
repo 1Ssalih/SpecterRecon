@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/specter-recon/recon-tool/core"
@@ -257,8 +258,9 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 
 // FuzzTargetService runs concurrent directory fuzzing against a single base URL.
 func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concurrency int, delayMs int) []core.DirFuzzFinding {
-	core.LogInfo("Dizin Taraması başlatılıyor: Hedef='%s', Liste='%s', Kelime Sayısı=%d", baseURL, matchTag, len(wordlist))
-	core.LogAudit("DIR_FUZZ_START", baseURL, fmt.Sprintf("words=%d, matchTag=%s, concurrency=%d", len(wordlist), matchTag, concurrency), "SUCCESS")
+	totalWords := len(wordlist)
+	core.LogInfo("Dizin Taraması başlatılıyor: Hedef='%s', Liste='%s', Kelime Sayısı=%d", baseURL, matchTag, totalWords)
+	core.LogAudit("DIR_FUZZ_START", baseURL, fmt.Sprintf("words=%d, matchTag=%s, concurrency=%d", totalWords, matchTag, concurrency), "SUCCESS")
 
 	if concurrency <= 0 {
 		concurrency = 25
@@ -281,16 +283,18 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 		},
 	}
 
-	wordChan := make(chan string, len(wordlist))
+	wordChan := make(chan string, totalWords)
 	for _, w := range wordlist {
 		wordChan <- w
 	}
 	close(wordChan)
 
 	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex
-		findings []core.DirFuzzFinding
+		wg             sync.WaitGroup
+		mu             sync.Mutex
+		findings       []core.DirFuzzFinding
+		processedCount int64
+		startTime      = time.Now()
 	)
 
 	for i := 0; i < concurrency; i++ {
@@ -299,6 +303,8 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 			defer wg.Done()
 			for w := range wordChan {
 				res := FuzzSingleURL(client, baseURL, w, matchTag, statusFilter, delayMs)
+				curr := atomic.AddInt64(&processedCount, 1)
+
 				if res != nil {
 					mu.Lock()
 					findings = append(findings, *res)
@@ -309,6 +315,26 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 						tag = " [KRİTİK DOSYA]"
 					}
 					core.LogSuccess("Dizin Bulundu: [%d] %s (Boyut: %dB)%s", res.StatusCode, res.URL, res.ContentLength, tag)
+				}
+
+				// Periodic progress log for large wordlists
+				if totalWords >= 2000 {
+					step := int64(totalWords / 5)
+					if step > 5000 {
+						step = 5000
+					}
+					if step > 0 && curr%step == 0 {
+						elapsed := time.Since(startTime).Seconds()
+						if elapsed > 0 {
+							rps := float64(curr) / elapsed
+							pct := float64(curr) / float64(totalWords) * 100
+							mu.Lock()
+							foundCount := len(findings)
+							mu.Unlock()
+							core.LogInfo("Fuzzing İlerlemesi (%s): %d/%d (%%%.1f) | Hız: %.0f req/s | Bulgu: %d",
+								matchTag, curr, totalWords, pct, rps, foundCount)
+						}
+					}
 				}
 			}
 		}()
