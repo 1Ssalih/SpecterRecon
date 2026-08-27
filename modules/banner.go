@@ -102,13 +102,13 @@ var ServiceRegexRules = []ServiceRegexRule{
 	},
 	// Databases
 	{
-		Pattern:     regexp.MustCompile(`(?i)([\d\.]+)-MariaDB`),
+		Pattern:     regexp.MustCompile(`(?i)([\d\.\-\w]+)-MariaDB`),
 		ServiceName: "mysql",
 		Description: "MariaDB",
 		ExtractVer:  func(m []string) string { return m[1] },
 	},
 	{
-		Pattern:     regexp.MustCompile(`(?i)([\d\.]+).*mysql`),
+		Pattern:     regexp.MustCompile(`(?i)(5\.\d+\.[\d\.\-\w]+|8\.\d+\.[\d\.\-\w]+)`),
 		ServiceName: "mysql",
 		Description: "MySQL",
 		ExtractVer:  func(m []string) string { return m[1] },
