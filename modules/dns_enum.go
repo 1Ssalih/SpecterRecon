@@ -36,27 +36,43 @@ func ResolveDomainDNS(domain string) []core.DNSFinding {
 	var findings []core.DNSFinding
 	seen := make(map[string]bool)
 
-	// A and AAAA records
+	// A and AAAA records (prefer IPv4 first for stable routing)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 
 	var r net.Resolver
-	ips, err := r.LookupIP(ctx, "ip", domain)
-	if err == nil {
+	ips, err := r.LookupIP(ctx, "ip4", domain)
+	if err == nil && len(ips) > 0 {
 		for _, ip := range ips {
-			recType := "A"
-			if ip.To4() == nil {
-				recType = "AAAA"
-			}
 			key := fmt.Sprintf("%s:%s", domain, ip.String())
 			if !seen[key] {
 				seen[key] = true
 				findings = append(findings, core.DNSFinding{
 					Hostname:   domain,
 					IP:         ip.String(),
-					RecordType: recType,
+					RecordType: "A",
 					Source:     "root_resolution",
 				})
+			}
+		}
+	} else {
+		ips, err = r.LookupIP(ctx, "ip", domain)
+		if err == nil {
+			for _, ip := range ips {
+				recType := "A"
+				if ip.To4() == nil {
+					recType = "AAAA"
+				}
+				key := fmt.Sprintf("%s:%s", domain, ip.String())
+				if !seen[key] {
+					seen[key] = true
+					findings = append(findings, core.DNSFinding{
+						Hostname:   domain,
+						IP:         ip.String(),
+						RecordType: recType,
+						Source:     "root_resolution",
+					})
+				}
 			}
 		}
 	}

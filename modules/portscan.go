@@ -153,10 +153,10 @@ func ScanTargetPorts(ip string, ports []int, concurrency int, timeout time.Durat
 	core.LogAudit("PORT_SCAN_START", ip, fmt.Sprintf("ports=%d, timeout=%v", len(ports), timeout), "SUCCESS")
 
 	if concurrency <= 0 {
-		concurrency = 100
+		concurrency = 30
 	}
 	if timeout <= 0 {
-		timeout = 1500 * time.Millisecond
+		timeout = 2500 * time.Millisecond
 	}
 
 	portChan := make(chan int, len(ports))
@@ -188,6 +188,27 @@ func ScanTargetPorts(ip string, ports []int, concurrency int, timeout time.Durat
 	}
 
 	wg.Wait()
+
+	// Smart Fallback Verification: If broad scan returned 0 ports (common in heavy NAT / SYN-drop networks),
+	// probe standard critical ports (80, 443, 22, 53, 389, 445, 8080, 8443) with higher tolerance.
+	if len(openPorts) == 0 && len(ports) > 10 {
+		fallbackPorts := []int{80, 443, 22, 53, 389, 445, 8080, 8443, 135, 139, 3389, 5985}
+		for _, fp := range fallbackPorts {
+			inOriginal := false
+			for _, op := range ports {
+				if op == fp {
+					inOriginal = true
+					break
+				}
+			}
+			if inOriginal {
+				if res := ScanSinglePort(ip, fp, 3000*time.Millisecond); res != nil {
+					openPorts = append(openPorts, *res)
+					core.LogSuccess("Açık Port Bulundu (Smart Retry): %s:%d (%s) [%.2fms]", ip, res.Port, res.ServiceName, *res.ResponseTimeMs)
+				}
+			}
+		}
+	}
 
 	sort.Slice(openPorts, func(i, j int) bool {
 		return openPorts[i].Port < openPorts[j].Port

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/specter-recon/recon-tool/core"
+	"github.com/specter-recon/recon-tool/templates"
 )
 
 // BuildCompleteReport combines individual artifacts into a unified CompleteScanReport.
@@ -114,6 +115,7 @@ func BuildCompleteReport(
 }
 
 // GenerateHTMLReport renders the HTML template and writes output/report.html.
+// It supports both external custom template files and embedded standalone templates.
 func GenerateHTMLReport(report core.CompleteScanReport, templatePath, outputPath string) (string, error) {
 	if templatePath == "" {
 		templatePath = "templates/report.html.tmpl"
@@ -125,10 +127,28 @@ func GenerateHTMLReport(report core.CompleteScanReport, templatePath, outputPath
 	core.LogInfo("HTML Raporu üretiliyor: '%s'...", outputPath)
 	core.LogAudit("REPORT_GENERATION_START", report.Target, fmt.Sprintf("output=%s", outputPath), "SUCCESS")
 
-	tmpl, err := template.ParseFiles(templatePath)
-	if err != nil {
-		core.LogError("Rapor şablonu okunamadı (%s): %v", templatePath, err)
-		return "", err
+	var tmpl *template.Template
+	var err error
+
+	if templatePath != "" && templatePath != "templates/report.html.tmpl" {
+		tmpl, err = template.ParseFiles(templatePath)
+		if err != nil {
+			core.LogError("Belirtilen rapor şablonu okunamadı (%s): %v", templatePath, err)
+			return "", err
+		}
+	} else {
+		// 1. First check if external template exists in current directory
+		if _, statErr := os.Stat("templates/report.html.tmpl"); statErr == nil {
+			tmpl, err = template.ParseFiles("templates/report.html.tmpl")
+		}
+		// 2. Fall back to embedded template (100% standalone, no file dependency)
+		if tmpl == nil || err != nil {
+			tmpl, err = template.New("report.html.tmpl").Parse(templates.DefaultHTMLReportTemplate)
+			if err != nil {
+				core.LogError("Gömülü rapor şablonu yüklenemedi: %v", err)
+				return "", err
+			}
+		}
 	}
 
 	dir := filepath.Dir(outputPath)

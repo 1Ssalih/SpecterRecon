@@ -287,6 +287,7 @@ func isSensitivePath(path string) bool {
 // BaselineResponse holds characteristics of non-existent path responses for Catch-All / Wildcard detection.
 type BaselineResponse struct {
 	IsCatchAll       bool
+	IsUnresponsive   bool
 	StatusCode       int
 	ContentLength    int64
 	RedirectLocation string
@@ -341,6 +342,12 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 			location:   resp.Header.Get("Location"),
 			title:      title,
 		})
+	}
+
+	if len(results) == 0 {
+		return BaselineResponse{
+			IsUnresponsive: true,
+		}
 	}
 
 	if len(results) >= 2 {
@@ -525,6 +532,10 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 
 	// Baseline Catch-All Probing
 	baseline := DetectBaselineResponse(client, baseURL, targetHost)
+	if baseline.IsUnresponsive {
+		core.LogWarning("Hedef web servisi ('%s') HTTP isteklerine yanıt vermiyor. Dizin fuzzing adımı atlandı.", baseURL)
+		return nil
+	}
 
 	wordChan := make(chan string, totalWords)
 	for _, w := range wordlist {

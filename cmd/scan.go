@@ -219,11 +219,12 @@ Entegrasyon Modları:
 		} else {
 			// Varsayılan: Native Go Worker Pool Port Scanner
 			parsedPorts := modules.ParsePortSpecs(portsFlag)
-			openPorts, _ = modules.ScanMultipleHosts(targetIPs, parsedPorts, threadsFlag, 1500*time.Millisecond, fmt.Sprintf("%s/ports.json", outputDirFlag))
+			openPorts, _ = modules.ScanMultipleHosts(targetIPs, parsedPorts, threadsFlag, 2500*time.Millisecond, fmt.Sprintf("%s/ports.json", outputDirFlag))
 		}
 
 		if len(openPorts) == 0 {
-			core.LogWarning("Hiçbir açık port tespit edilemedi. Tarama sonlandırılıyor.")
+			core.LogWarning("Taranan port aralığında ('%s') açık port tespit edilemedi.", portsFlag)
+			core.LogInfo("İpucu: Güvenlik duvarı filtrelemesi olabilir. Daha geniş aralık için '-p top-1000' veya stealth tarama için '--profile stealth -d 50' kullanabilirsiniz.")
 			earlyDuration := time.Since(startTime).Seconds()
 			report := modules.BuildCompleteReport(target, dnsFindings, hosts, nil, nil, nil, earlyDuration, nil, conflictingPorts)
 			report.ScanProfile = profile
