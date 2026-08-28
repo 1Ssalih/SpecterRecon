@@ -1,0 +1,14 @@
+manager/html
+manager/status
+manager/text
+host-manager/html
+docs/
+examples/
+examples/servlets/
+examples/jsp/
+ROOT/
+RELEASE-NOTES.txt
+tomcat.png
+tomcat.svg
+tomcat.css
+favicon.ico

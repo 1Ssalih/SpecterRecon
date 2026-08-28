@@ -189,25 +189,44 @@ func ScanTargetPorts(ip string, ports []int, concurrency int, timeout time.Durat
 
 	wg.Wait()
 
-	// Smart Fallback Verification: If broad scan returned 0 ports (common in heavy NAT / SYN-drop networks),
-	// probe standard critical ports (80, 443, 22, 53, 389, 445, 8080, 8443) with higher tolerance.
-	if len(openPorts) == 0 && len(ports) > 10 {
-		fallbackPorts := []int{80, 443, 22, 53, 389, 445, 8080, 8443, 135, 139, 3389, 5985}
-		for _, fp := range fallbackPorts {
-			inOriginal := false
-			for _, op := range ports {
-				if op == fp {
-					inOriginal = true
-					break
-				}
-			}
-			if inOriginal {
-				if res := ScanSinglePort(ip, fp, 3000*time.Millisecond); res != nil {
-					openPorts = append(openPorts, *res)
-					core.LogSuccess("Açık Port Bulundu (Smart Retry): %s:%d (%s) [%.2fms]", ip, res.Port, res.ServiceName, *res.ResponseTimeMs)
-				}
-			}
+	// High-Value Candidate Port Teyit Katmanı:
+	// Çoklu host veya NAT ağlarında hızlı tarama sırasında düşmüş olabilecek kritik servis portları
+	// (80, 443, 3389, 5985, 5900, 8000, 445, 135, 139, 389, 636, 88, 53, 22) için ikincil hızlı teyit yapılır.
+	highValueCandidates := []int{80, 443, 22, 53, 88, 135, 139, 389, 445, 636, 3389, 5900, 5985, 8000, 8080, 8443}
+	openMap := make(map[int]bool)
+	for _, op := range openPorts {
+		openMap[op.Port] = true
+	}
+	originalMap := make(map[int]bool)
+	for _, p := range ports {
+		originalMap[p] = true
+	}
+
+	var needRetry []int
+	for _, cp := range highValueCandidates {
+		if originalMap[cp] && !openMap[cp] {
+			needRetry = append(needRetry, cp)
 		}
+	}
+
+	if len(needRetry) > 0 {
+		var retryWg sync.WaitGroup
+		retrySem := make(chan struct{}, 8)
+		for _, rp := range needRetry {
+			retryWg.Add(1)
+			go func(p int) {
+				defer retryWg.Done()
+				retrySem <- struct{}{}
+				defer func() { <-retrySem }()
+				if res := ScanSinglePort(ip, p, 3500*time.Millisecond); res != nil {
+					mu.Lock()
+					openPorts = append(openPorts, *res)
+					mu.Unlock()
+					core.LogSuccess("Açık Port Bulundu (Teyit): %s:%d (%s) [%.2fms]", ip, res.Port, res.ServiceName, *res.ResponseTimeMs)
+				}
+			}(rp)
+		}
+		retryWg.Wait()
 	}
 
 	sort.Slice(openPorts, func(i, j int) bool {
@@ -229,8 +248,17 @@ func ScanMultipleHosts(ips []string, ports []int, concurrency int, timeout time.
 	var allPorts []core.PortInfo
 	for _, ip := range ips {
 		found, err := ScanTargetPorts(ip, ports, concurrency, timeout, "")
-		if err == nil {
+		if err == nil && len(found) > 0 {
 			allPorts = append(allPorts, found...)
+		} else {
+			// Quick fallback with gentle pacing in case of transient gateway queueing
+			time.Sleep(100 * time.Millisecond)
+			retryConcurrency := concurrency
+			if retryConcurrency > 15 {
+				retryConcurrency = 15
+			}
+			retryFound, _ := ScanTargetPorts(ip, ports, retryConcurrency, timeout+500*time.Millisecond, "")
+			allPorts = append(allPorts, retryFound...)
 		}
 	}
 	if outputFile != "" {

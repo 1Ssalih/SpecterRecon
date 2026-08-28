@@ -6,8 +6,9 @@ import "time"
 type DNSFinding struct {
 	Hostname   string `json:"hostname"`
 	IP         string `json:"ip"`
-	RecordType string `json:"record_type"` // A, AAAA, CNAME
-	Source     string `json:"source"`      // root_resolution, subdomain_bruteforce
+	RecordType string `json:"record_type"` // A, AAAA, CNAME, MX, TXT, NS, SOA, SRV, PTR
+	Value      string `json:"value,omitempty"`
+	Source     string `json:"source"`      // root_resolution, subdomain_bruteforce, srv_discovery, reverse_ptr
 }
 
 // HostInfo represents a single discovered host.
@@ -115,6 +116,7 @@ type DirFuzzFinding struct {
 	IsSensitive      bool     `json:"is_sensitive"`
 	WordlistMatched  string   `json:"wordlist_matched,omitempty"`
 	MatchedTech      string   `json:"matched_tech,omitempty"`
+	AllowedMethods   []string `json:"allowed_methods,omitempty"`
 }
 
 // --- Genişletilmiş Pasif Recon Struct'ları ---

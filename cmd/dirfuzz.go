@@ -39,7 +39,6 @@ var dirfuzzCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		targetURL := args[0]
-		core.PrintBanner(version)
 		core.EnsureOutputDir("output")
 		if !verifyScopePermission(targetURL) {
 			return

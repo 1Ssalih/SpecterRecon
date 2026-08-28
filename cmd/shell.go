@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bufio"
+	"io"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/chzyer/readline"
 	"github.com/pterm/pterm"
 	"github.com/specter-recon/recon-tool/core"
 	"github.com/spf13/cobra"
@@ -35,8 +37,8 @@ func StartInteractiveShell(rootCmd *cobra.Command) {
 		WithTitleTopCenter().
 		WithBoxStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).
 		Println(
-			pterm.FgWhite.Sprint("İnteraktif Konsol Modu Aktif (Metasploit Style).\n") +
-				pterm.FgGray.Sprint("Doğrudan komutlarınızı yazabilirsiniz. 'exit' ile çıkabilir, 'help' ile kılavuzu görebilirsiniz.\n\n") +
+			pterm.FgWhite.Sprint("İnteraktif Konsol Modu Aktif (Readline / Metasploit Style).\n") +
+				pterm.FgGray.Sprint("Ok tuşlarıyla geçmişi gezebilir, TAB ile tamamlayabilir, 'exit' ile çıkabilirsiniz.\n\n") +
 				pterm.FgLightCyan.Sprint("Hızlı Başlangıç Komutları:\n") +
 				pterm.FgCyan.Sprint("  • scan <hedef> --authorized               ") + pterm.FgGray.Sprint("➔ Temel Boru Hattı Taraması\n") +
 				pterm.FgCyan.Sprint("  • fullscan <hedef> --authorized           ") + pterm.FgGray.Sprint("➔ Genişletilmiş Tam Denetim (SSL/HTTP/SSH)\n") +
@@ -46,6 +48,70 @@ func StartInteractiveShell(rootCmd *cobra.Command) {
 				pterm.FgCyan.Sprint("  • report -t \"Hedef Adı\"                 ") + pterm.FgGray.Sprint("➔ HTML Dashboard & Summary Üret"),
 		)
 
+	// Build Tab Completer
+	completer := readline.NewPrefixCompleter(
+		readline.PcItem("scan"),
+		readline.PcItem("fullscan"),
+		readline.PcItem("dns"),
+		readline.PcItem("discover"),
+		readline.PcItem("portscan"),
+		readline.PcItem("banner"),
+		readline.PcItem("dirfuzz"),
+		readline.PcItem("ssl"),
+		readline.PcItem("report"),
+		readline.PcItem("help"),
+		readline.PcItem("clear"),
+		readline.PcItem("cls"),
+		readline.PcItem("exit"),
+		readline.PcItem("quit"),
+	)
+
+	// Try initializing Readline with full arrow key, history, and autocomplete support
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:            "\033[1;36mspecter-recon > \033[0m",
+		AutoComplete:      completer,
+		InterruptPrompt:   "^C",
+		EOFPrompt:         "exit",
+		HistorySearchFold: true,
+	})
+
+	if err == nil {
+		defer rl.Close()
+		for {
+			line, rErr := rl.Readline()
+			if rErr == readline.ErrInterrupt {
+				// Ctrl+C pressed - keep session alive
+				continue
+			} else if rErr == io.EOF {
+				// Ctrl+D or exit
+				pterm.Println(pterm.FgYellow.Sprint("\nİnteraktif konsoldan çıkılıyor. İyi çalışmalar!"))
+				break
+			} else if rErr != nil {
+				// On unexpected error, fallback to scanner loop
+				break
+			}
+
+			input := strings.TrimSpace(line)
+			if input == "" {
+				continue
+			}
+
+			if input == "exit" || input == "quit" || input == "q" {
+				pterm.Println(pterm.FgYellow.Sprint("İnteraktif konsoldan çıkılıyor. İyi çalışmalar!"))
+				break
+			}
+
+			if input == "clear" || input == "cls" {
+				print("\033[H\033[2J")
+				continue
+			}
+
+			processCommand(rootCmd, input)
+		}
+		return
+	}
+
+	// Fallback Scanner loop if Readline is not supported in the host terminal environment
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		pterm.Print(pterm.NewStyle(pterm.FgLightCyan, pterm.Bold).Sprintf("\nspecter-recon > "))
@@ -53,56 +119,60 @@ func StartInteractiveShell(rootCmd *cobra.Command) {
 			break
 		}
 
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		input := strings.TrimSpace(scanner.Text())
+		if input == "" {
 			continue
 		}
 
-		if line == "exit" || line == "quit" || line == "q" {
+		if input == "exit" || input == "quit" || input == "q" {
 			pterm.Println(pterm.FgYellow.Sprint("İnteraktif konsoldan çıkılıyor. İyi çalışmalar!"))
 			break
 		}
 
-		if line == "clear" || line == "cls" {
+		if input == "clear" || input == "cls" {
 			print("\033[H\033[2J")
 			continue
 		}
 
-		// Split command line into args
-		cmdArgs := parseCommandLine(line)
+		processCommand(rootCmd, input)
+	}
+}
+
+// processCommand parses and executes a command string against RootCmd.
+func processCommand(rootCmd *cobra.Command, input string) {
+	cmdArgs := parseCommandLine(input)
+	if len(cmdArgs) == 0 {
+		return
+	}
+
+	// Smart prefix stripping: If user accidentally types ".\specter-recon.exe scan ..." or "specter-recon scan ..."
+	firstArg := strings.ToLower(cmdArgs[0])
+	if strings.HasSuffix(firstArg, "specter-recon.exe") || strings.HasSuffix(firstArg, "specter-recon") {
+		cmdArgs = cmdArgs[1:]
 		if len(cmdArgs) == 0 {
-			continue
+			return
 		}
+	}
 
-		// Smart prefix stripping: If user accidentally types ".\specter-recon.exe scan ..." or "specter-recon scan ..."
-		firstArg := strings.ToLower(cmdArgs[0])
-		if strings.HasSuffix(firstArg, "specter-recon.exe") || strings.HasSuffix(firstArg, "specter-recon") {
-			cmdArgs = cmdArgs[1:]
-			if len(cmdArgs) == 0 {
-				continue
-			}
+	// Reset authorizedFlag before command execution unless --authorized in args
+	hasAuthArg := false
+	for _, a := range cmdArgs {
+		if a == "--authorized" {
+			hasAuthArg = true
+			break
 		}
+	}
+	authorizedFlag = hasAuthArg
 
-		// Reset authorizedFlag before command execution unless --authorized in args
-		hasAuthArg := false
-		for _, a := range cmdArgs {
-			if a == "--authorized" {
-				hasAuthArg = true
-				break
-			}
-		}
-		authorizedFlag = hasAuthArg
+	// Execute root command with parsed args
+	startTime := time.Now()
+	rootCmd.SetArgs(cmdArgs)
+	_ = rootCmd.Execute()
 
-		// Execute root command with parsed args
-		startTime := time.Now()
-		rootCmd.SetArgs(cmdArgs)
-		_ = rootCmd.Execute()
-
-		// Print subtle elapsed time if it was a real command
-		elapsed := time.Since(startTime).Seconds()
-		if elapsed >= 0.5 {
-			core.LogInfo("Oturum Komutu Tamamlandı (%s) | Toplam Süre: %.2fs", cmdArgs[0], elapsed)
-		}
+	// Print subtle elapsed time if it was a real command
+	elapsed := time.Since(startTime).Seconds()
+	if elapsed >= 0.5 {
+		core.LogInfo("Oturum Komutu Tamamlandı (%s) | Toplam Süre: %.2fs", cmdArgs[0], elapsed)
 	}
 }
 

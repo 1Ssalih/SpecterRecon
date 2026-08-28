@@ -22,7 +22,6 @@ var portscanCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
-		core.PrintBanner(version)
 		core.EnsureOutputDir("output")
 		if !verifyScopePermission(target) {
 			return

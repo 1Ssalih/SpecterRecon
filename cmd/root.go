@@ -20,39 +20,22 @@ var (
 // RootCmd is the base command for SpecterRecon.
 var RootCmd = &cobra.Command{
 	Use:   "specter-recon",
-	Short: "⚡ SpecterRecon: Yüksek Performanslı ve Modüler Ağ Keşif (Recon) Motoru",
-	Long: `SpecterRecon, siber güvenlik araştırmacıları, sızma testi ekipleri ve SOC analistleri için
-geliştirilmiş, yüksek eşzamanlılıklı (Goroutine Worker Pools), modüler ve tam boru hattı
-(pipeline) destekli yeni nesil ağ keşif (reconnaissance) motorudur.
+	Short: "⚡ SpecterRecon — Yüksek Performanslı Modüler Ağ Keşif Motoru",
+	Long: `
+  ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
+  ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
+  ██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
+  ██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║
+  ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║
+  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝
 
-Çekirdek Keşif Modülleri:
-  • DNS & Subdomain Keşfi (Brute-Force & Reverse DNS)
-  • Çok Yöntemli Canlı Host Keşfi (ARP, ICMP Ping, TCP SYN Probe)
-  • Goroutine Destekli Hızlı TCP Connect Port Taraması
-  • Protokol ve Banner Ayrıştırma (HTTP, SSH, MySQL, NetBIOS, VNC, FTP, SMTP)
-  • Servise Özel Akıllı Web Dizin Fuzzing (SecLists Submodule Entegrasyonu)
+SpecterRecon — Siber güvenlik araştırmacıları, sızma testi ekipleri ve SOC analistleri
+için geliştirilmiş, yüksek eşzamanlılıklı, modüler ve pipeline destekli recon motorudur.
 
-Genişletilmiş Pasif Denetim Modülleri (--extended):
-  • SSL/TLS Sertifika Geçerlilik, SAN ve Zayıf Protokol Denetimi
-  • HTTP Güvenlik Başlıkları (Security Headers), CORS ve GraphQL Denetimi
-  • SSH Algoritma ve Güvenlik Konfigürasyon Denetimi`,
-	Example: `  # 1. İnteraktif Konsol Modu (Parametresiz Çalıştırma):
-  specter-recon
-
-  # 2. Temel Boru Hattı Keşif Taraması (DNS + Discovery + Port + Banner + Web):
-  specter-recon scan example.com --authorized
-
-  # 3. Subdomain Brute-Force ve Genişletilmiş Denetimlerle Tam Tarama:
-  specter-recon fullscan example.com --subdomains --authorized
-
-  # 4. SecLists ile Kapsamlı (30,000+ kelime) Web Dizin Taraması:
-  specter-recon scan example.com --wordlist-size full --authorized
-
-  # 5. Bağımsız Özel Port ve Thread Ayarlı Tarama:
-  specter-recon portscan 192.168.1.1 -p 1-1024 -t 100 --authorized
-
-  # 6. Servis Bazlı Akıllı Web Fuzzing (IIS, Nginx, Apache, Jenkins, WordPress):
-  specter-recon dirfuzz http://example.com --service iis --authorized`,
+Parametresiz çalıştırdığınızda interaktif konsol (Metasploit tarzı) moduna geçer.`,
+	Example: `  specter-recon                                     → İnteraktif konsol modu
+  specter-recon scan example.com --authorized        → Temel pipeline tarama
+  specter-recon fullscan example.com --authorized    → Genişletilmiş tam denetim`,
 	Run: func(cmd *cobra.Command, args []string) {
 		StartInteractiveShell(cmd)
 	},
@@ -66,43 +49,255 @@ func Execute() {
 }
 
 func init() {
-	RootCmd.PersistentFlags().BoolVar(&authorizedFlag, "authorized", false, "Hedef için yasal tarama izninizin olduğunu onaylar (Guardrail Onayı)")
+	RootCmd.PersistentFlags().BoolVar(&authorizedFlag, "authorized", false, "Hedef için yasal tarama izninizin olduğunu onaylar")
 
-	// Custom categorized help template
 	RootCmd.SetHelpTemplate(`
 {{.Long}}
 
-KULLANIM (USAGE):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KULLANIM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   {{.UseLine}}
-{{if .HasAvailableSubCommands}}
-KOMUT KATEGORİLERİ:
-  🚀 Keşif Pipeline Komutları:
-    scan        Hedef üzerinde tam otomatik DNS + Host + Port + Banner + Web pipeline'ı çalıştırır
-    fullscan    Tüm çekirdek ve genişletilmiş modülleri (SSL/HTTP/SSH) aktif ederek çalıştırır (scan --extended kısayolu)
-    shell       Metasploit tarzı interaktif konsol modunu başlatır
 
-  🔬 Bağımsız Keşif & Analiz Modülleri:
-    dns         Hedef domain için DNS çözümleme ve subdomain brute-force yapar
-    discover    Ağdaki canlı hostları tespit eder (ICMP / TCP Ping)
-    portscan    Hedefte yüksek hızlı TCP port taraması yapar
-    banner      Açık portlardan servis ve temiz versiyon banner'ı çeker
-    dirfuzz     Akıllı wordlist ve SecLists ile web dizin/dosya fuzzing yapar
-    ssl         SSL/TLS sertifika geçerliliği ve zayıf protokol denetimi yapar
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀  PIPELINE KOMUTLARI  (Tam otomatik keşif zinciri)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  📊 Raporlama & Yardımcılar:
-    report      Mevcut JSON tarama çıktılarından HTML dashboard ve summary.txt üretir
-    help        Herhangi bir komut hakkında detaylı yardım gösterir
-{{end}}
-{{if .HasAvailableLocalFlags}}BAYRAKLAR (FLAGS):
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}
-{{end}}
-{{if .HasAvailableInheritedFlags}}GLOBAL BAYRAKLAR:
+  scan <hedef> [bayraklar]
+      DNS → Host Discovery → Port Scan → Banner Grab → DirFuzz
+      pipeline'ını sırayla çalıştırır. En temel recon komutu.
+
+      Bayraklar:
+        -p, --ports           Port aralığı veya listesi (varsayılan: top-1000)
+                              Örn: "80,443,8080"  "1-65535"  "top-100"
+        -t, --threads         Eşzamanlı worker sayısı (varsayılan: 50)
+        -d, --delay           İstekler arası gecikme ms cinsinden (varsayılan: 0)
+            --subdomains      Subdomain brute-force'u aktif eder
+            --skip-dirfuzz    Web dizin fuzzing adımını atlar
+            --wordlist-size   Wordlist boyutu: quick | balanced | full (varsayılan: balanced)
+                              quick   → ~300 kelime (hızlı tarama)
+                              balanced→ ~3.000 kelime (varsayılan)
+                              full    → ~30.000 kelime (SecLists tam liste)
+            --profile         Tarama profili: balanced | aggressive | stealth
+                              balanced   → Native Go worker pool, dengeli (varsayılan)
+                              aggressive → Masscan + Nmap NSE + SecLists full list
+                              stealth    → Düşük thread, yüksek gecikme, sessiz
+            --extended        SSL/TLS + HTTP audit + SSH audit modüllerini çalıştırır
+            --nmap-xml        Önceden alınmış nmap -oX çıktısını içe aktarır
+            --masscan-json    Önceden alınmış masscan -oJ çıktısını içe aktarır
+            --use-masscan     Masscan'ı subprocess olarak tetikler (root gerekli)
+            --use-nmap-nse    Tespit edilen servislere Nmap NSE scriptleri uygular
+        -o, --output          Çıktı dizini (varsayılan: ./output)
+            --authorized      Yasal izin onayı (zorunlu)
+
+      Örnekler:
+        specter-recon scan example.com --authorized
+        specter-recon scan example.com --subdomains --wordlist-size full --authorized
+        specter-recon scan 10.0.0.0/24 --profile aggressive --authorized
+        specter-recon scan example.com --profile stealth -d 200 --authorized
+        specter-recon scan example.com --ports 1-65535 -t 200 --authorized
+        specter-recon scan example.com --extended --authorized
+        specter-recon scan --nmap-xml nmap_out.xml --authorized
+        specter-recon scan --masscan-json masscan_out.json --authorized
+
+  ─────────────────────────────────────────────────────────────────
+
+  fullscan <hedef> [bayraklar]
+      scan --extended kısayolu. SSL/TLS, HTTP güvenlik başlıkları,
+      CORS, GraphQL ve SSH algoritma denetimleri dahil tam tarama.
+      Scan'in tüm bayraklarını destekler.
+
+      Örnekler:
+        specter-recon fullscan example.com --authorized
+        specter-recon fullscan example.com --subdomains --authorized
+        specter-recon fullscan 192.168.1.0/24 --profile aggressive --authorized
+        specter-recon fullscan example.com --wordlist-size full --authorized
+        specter-recon fullscan example.com --use-nmap-nse --authorized
+
+  ─────────────────────────────────────────────────────────────────
+
+  shell
+      Metasploit tarzı interaktif konsol moduna geçer.
+      Ok tuşu geçmişi, TAB tamamlama, Ctrl+C/D destekler.
+      Parametresiz çalıştırmakla aynıdır.
+
+        specter-recon shell
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔬  BAĞIMSIZ MODÜLLER  (Tek adım çalıştırma)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  dns <hedef> [bayraklar]
+      A, MX, NS, TXT, SRV, PTR DNS kayıtlarını çözer.
+      --subdomains ile wordlist tabanlı subdomain brute-force yapar.
+      Bulunan IP'ler için otomatik ters DNS (PTR) sorgusu yapar.
+
+      Bayraklar:
+        --subdomains    Subdomain brute-force aktif eder
+        -t, --threads   Worker sayısı
+
+      Örnekler:
+        specter-recon dns example.com --authorized
+        specter-recon dns example.com --subdomains --authorized
+        specter-recon dns example.com --subdomains -t 100 --authorized
+
+  ─────────────────────────────────────────────────────────────────
+
+  discover <hedef> [bayraklar]
+      ICMP Ping + TCP SYN Probe ile ağdaki canlı hostları tespit eder.
+      Tek IP, CIDR aralığı veya host listesi destekler.
+
+      Örnekler:
+        specter-recon discover 192.168.1.0/24 --authorized
+        specter-recon discover 10.0.0.1-254 --authorized
+        specter-recon discover 10.0.0.100 --authorized
+
+  ─────────────────────────────────────────────────────────────────
+
+  portscan <hedef> [bayraklar]
+      Yüksek hızlı TCP Connect port taraması. Native Go worker pool.
+      CIDR, tek IP veya domain destekler.
+
+      Bayraklar:
+        -p, --ports     Port aralığı/listesi (varsayılan: top-1000)
+        -t, --threads   Eşzamanlı worker sayısı (varsayılan: 50)
+
+      Örnekler:
+        specter-recon portscan 192.168.1.1 --authorized
+        specter-recon portscan 10.0.0.100 -p 1-65535 -t 200 --authorized
+        specter-recon portscan 10.0.0.0/24 -p 80,443,8080,8443 --authorized
+        specter-recon portscan example.com -p top-100 --authorized
+
+  ─────────────────────────────────────────────────────────────────
+
+  banner <hedef:port> [bayraklar]
+      Belirtilen IP:port veya domain:port çiftlerinden servis banner'ı
+      ve versiyon bilgisi çeker. Protokol otomatik algılama yapar.
+
+      Desteklenen protokoller:
+        HTTP/HTTPS, SSH, FTP, SMTP, MySQL, MSSQL, LDAP, SMB2/NTLMSSP,
+        RDP (TLS/NLA), WinRM/WSMAN, VNC (RFB), Redis, Memcached,
+        PostgreSQL, Oracle TNS, NetBIOS, Kerberos, SIP, MSRPC
+
+      Örnekler:
+        specter-recon banner 192.168.1.1:80 --authorized
+        specter-recon banner 10.0.0.100:445 --authorized
+        specter-recon banner example.com:22 --authorized
+        specter-recon banner 10.0.0.100:389 --authorized   (LDAP / AD)
+
+  ─────────────────────────────────────────────────────────────────
+
+  dirfuzz <url> [bayraklar]
+      Akıllı web dizin ve dosya fuzzing. Tespit edilen servise göre
+      otomatik uzantı ve wordlist seçimi yapar. robots.txt + sitemap
+      keşfi, catch-all/wildcard filtresi, WAF/CDN tespiti içerir.
+
+      Bayraklar:
+        --service       Servis tipi: iis | apache | nginx | php |
+                        springboot | wordpress | jenkins | tomcat
+        --wordlist-size quick | balanced | full
+        -t, --threads   Worker sayısı
+        -x, --exts      Özel uzantı listesi: ".php,.bak,.conf"
+
+      Örnekler:
+        specter-recon dirfuzz http://example.com --authorized
+        specter-recon dirfuzz http://10.0.0.100 --service iis --authorized
+        specter-recon dirfuzz https://example.com --service wordpress --authorized
+        specter-recon dirfuzz http://app.com --wordlist-size full --authorized
+        specter-recon dirfuzz http://app.com -x ".php,.bak,.env" --authorized
+
+  ─────────────────────────────────────────────────────────────────
+
+  ssl <host:port> [bayraklar]
+      SSL/TLS sertifika geçerliliği, SAN alanları, zayıf protokol
+      (SSLv3, TLS 1.0/1.1) ve zayıf cipher suite denetimi yapar.
+      HTTP güvenlik başlıkları (HSTS, CSP, X-Frame-Options vb.),
+      CORS ve GraphQL endpoint denetimi de kapsar.
+
+      Örnekler:
+        specter-recon ssl example.com:443 --authorized
+        specter-recon ssl 10.0.0.100:8443 --authorized
+        specter-recon ssl 10.0.0.100:443 --authorized
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊  RAPORLAMA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  report [bayraklar]
+      Mevcut output/ klasöründeki JSON tarama sonuçlarından
+      HTML dashboard ve summary.txt raporu üretir.
+
+      Bayraklar:
+        -t, --title   Rapor başlığı (varsayılan: "SpecterRecon Report")
+        -o, --output  Çıktı dizini (varsayılan: ./output)
+
+      Örnekler:
+        specter-recon report --authorized
+        specter-recon report -t "Milsoft Pentest" --authorized
+        specter-recon report -o ./output/milsoft --authorized
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔗  DIŞ ARAÇ ENTEGRASYONları
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Masscan (Hızlı SYN Port Tarama — Root/Admin gerektirir):
+    specter-recon scan 10.0.0.0/24 --use-masscan --authorized
+    specter-recon scan 10.0.0.0/24 --masscan-json masscan_out.json --authorized
+
+    Manuel masscan → import:
+      sudo masscan 10.0.0.0/24 -p1-65535 --rate=50000 -oJ out.json
+      specter-recon scan --masscan-json out.json --authorized
+
+  Nmap NSE (Zafiyet Denetimi):
+    specter-recon scan example.com --use-nmap-nse --authorized
+    specter-recon scan --nmap-xml nmap_out.xml --authorized
+
+    Manuel nmap → import:
+      nmap -sV -p80,443,445 -oX out.xml example.com
+      specter-recon scan --nmap-xml out.xml --authorized
+
+    Yerleşik NSE eşlemeleri (config.yaml üzerinden özelleştirilebilir):
+      Port 445  → smb-vuln-ms17-010, smb-os-discovery
+      Port 443  → ssl-heartbleed, ssl-cert
+      Port 80   → http-vuln-cve2021-41773, http-methods
+      Port 22   → ssh-auth-methods
+      Port 3389 → rdp-enum-encryption
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡  HIZLI BAŞLANGIÇ ÖRNEKLERİ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # İnteraktif konsol (ok tuşu geçmişi + TAB tamamlama)
+  specter-recon
+
+  # Bir domain'i uçtan uca tara (DNS+Port+Banner+Web+SSL/HTTP/SSH)
+  specter-recon fullscan example.com --authorized
+
+  # Subdomain keşfi dahil tam tarama + derin wordlist
+  specter-recon fullscan example.com --subdomains --wordlist-size full --authorized
+
+  # Tüm portları tara (1-65535), aggressive modda
+  specter-recon scan example.com -p 1-65535 --profile aggressive --authorized
+
+  # İç ağ taraması (CIDR) — stealth modda
+  specter-recon scan 10.0.0.0/24 --profile stealth --authorized
+
+  # Sadece IIS'e özel dizin fuzzing
+  specter-recon dirfuzz http://10.0.0.100 --service iis --wordlist-size full --authorized
+
+  # SSL sertifika ve güvenlik başlığı denetimi
+  specter-recon ssl example.com:443 --authorized
+
+  # Önceki taramadan rapor üret
+  specter-recon report -t "Müşteri Pentest Raporu" --authorized
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GLOBAL BAYRAKLAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}
-{{end}}
-{{if .Example}}ÖRNEKLER (EXAMPLES):
-{{.Example}}
-{{end}}
-Detaylı modül yardımı için: specter-recon [komut] --help
+
+  Detaylı modül yardımı: specter-recon [komut] --help
+  Örn: specter-recon scan --help
 `)
 }
 

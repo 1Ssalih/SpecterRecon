@@ -382,7 +382,7 @@ func TestSensitiveKeywordsAccessDenied(t *testing.T) {
 	statusFilter := map[int]bool{200: true, 401: true, 403: true}
 	client := ts.Client()
 
-	finding := FuzzSingleURL(client, ts.URL, ".env", "sensitive", statusFilter, nil, BaselineResponse{}, "")
+	finding := FuzzSingleURL(client, ts.URL, ".env", "sensitive", statusFilter, nil, BaselineResponse{}, "", nil)
 	if finding == nil {
 		t.Fatalf("403 Forbidden dönen .env dosyası finding olarak yakalanamadı")
 	}
@@ -924,3 +924,209 @@ func TestNSEMappings(t *testing.T) {
 	}
 }
 
+func TestDiscoverActiveDirectorySRVAndDNS(t *testing.T) {
+	// Test Domain resolution helper
+	findings := ResolveDomainDNS("localhost")
+	if len(findings) == 0 {
+		t.Logf("Localhost A kaydı çözümlenemedi (çevreye bağlı)")
+	}
+
+	// Test Reverse DNS helper on invalid IP (must handle gracefully)
+	ptrFindings := ResolveReverseDNS([]string{"127.0.0.1", "invalid-ip", ""})
+	if len(ptrFindings) == 0 {
+		t.Logf("127.0.0.1 PTR çözümlenmedi veya boş döndü (normal)")
+	}
+}
+
+func TestMSSQLTDSPreLoginProbe(t *testing.T) {
+	// Setup mock TDS 7.x Pre-Login listener
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("TCP listener açılamadı: %v", err)
+	}
+	defer l.Close()
+
+	_, portStr, _ := net.SplitHostPort(l.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		buf := make([]byte, 1024)
+		n, _ := conn.Read(buf)
+		if n >= 8 && buf[0] == 0x12 { // Pre-Login packet
+			// Craft TDS Pre-Login Response (Option 0: Version 15.0.4188 -> Major 15, Minor 0, Build 4188 = 0x105c)
+			resp := []byte{
+				0x04, 0x01, 0x00, 0x1a, 0x00, 0x00, 0x01, 0x00, // Header: TDS Response (length 26)
+				0x00, 0x00, 0x13, 0x00, 0x06, // Option 0: VERSION (Offset 19, Length 6)
+				0x01, 0x00, 0x19, 0x00, 0x01, // Option 1: ENCRYPTION (Offset 25, Length 1)
+				0xff,                         // Terminator
+				0x0f, 0x00, 0x10, 0x5c, 0x00, 0x00, // Version (15.0.4188)
+				0x00, // Encryption
+			}
+			_, _ = conn.Write(resp)
+		}
+	}()
+
+	res, ok := ProbeMSSQLService("127.0.0.1", port, 2*time.Second)
+	if !ok || res.ServiceName != "ms-sql-s" {
+		t.Fatalf("MSSQL TDS Pre-Login probe başarısız: ok=%v, res=%+v", ok, res)
+	}
+	if res.Version != "15.0.4188" {
+		t.Errorf("Beklenen versiyon 15.0.4188, alinan: %s", res.Version)
+	}
+	if !strings.Contains(res.ServiceDesc, "Microsoft SQL Server 2019") {
+		t.Errorf("ServiceDesc 'Microsoft SQL Server 2019' içermeli: %s", res.ServiceDesc)
+	}
+}
+
+func TestWinRMWSMANProbe(t *testing.T) {
+	// Setup mock WinRM HTTP server responding to /wsman SOAP Identify
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/wsman" && r.Method == "POST" {
+			w.Header().Set("Server", "Microsoft-HTTPAPI/2.0")
+			w.Header().Set("Content-Type", "application/soap+xml;charset=UTF-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:wsmid="http://schemas.dmtf.org/wbem/wsman/identity/1/wsmanidentity.xsd">
+<s:Body><wsmid:IdentifyResponse>
+<wsmid:ProductVendor>Microsoft Corporation</wsmid:ProductVendor>
+<wsmid:ProductVersion>OS: 10.0.17763 SP: 0.0 Stack: 3.0</wsmid:ProductVersion>
+</wsmid:IdentifyResponse></s:Body></s:Envelope>`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	p, _ := strconv.Atoi(u.Port())
+
+	res, ok := ProbeWinRMService(u.Hostname(), p, 2*time.Second)
+	if !ok {
+		t.Fatalf("WinRM WS-Management probe başarısız: ok=%v, res=%+v", ok, res)
+	}
+	if !strings.Contains(res.Version, "10.0.17763") {
+		t.Errorf("WinRM OS versiyonu çıkarılamadı: %s", res.Version)
+	}
+	if !strings.Contains(res.ServiceDesc, "WinRM") {
+		t.Errorf("ServiceDesc WinRM içermeli: %s", res.ServiceDesc)
+	}
+}
+
+func TestHTTPMethodAuditAndRobotsDiscovery(t *testing.T) {
+	// Setup mock HTTP server with OPTIONS and robots.txt
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "OPTIONS" {
+			w.Header().Set("Allow", "GET, POST, OPTIONS, TRACE, PUT")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.URL.Path == "/robots.txt" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("User-agent: *\nDisallow: /admin-portal/\nDisallow: /secret_config.php\nAllow: /public/\n"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := server.Client()
+
+	// 1. Audit HTTP Methods
+	methods := AuditHTTPMethods(client, server.URL, "")
+	if len(methods) != 5 {
+		t.Errorf("5 metot bekleniyordu, bulunan: %d (%v)", len(methods), methods)
+	}
+	hasTrace := false
+	hasPut := false
+	for _, m := range methods {
+		if m == "TRACE" {
+			hasTrace = true
+		}
+		if m == "PUT" {
+			hasPut = true
+		}
+	}
+	if !hasTrace || !hasPut {
+		t.Errorf("TRACE ve PUT metotları tespit edilemedi: %v", methods)
+	}
+
+	// 2. Fetch robots.txt paths
+	robots := FetchRobotsTxtPaths(client, server.URL, "")
+	if len(robots) < 2 {
+		t.Errorf("En az 2 robots.txt yolu bulunmalıydı, bulunan: %d (%v)", len(robots), robots)
+	}
+
+	// 3. Dynamic extension variants
+	baseWords := []string{"login", "admin"}
+	aspnetMutated := GenerateTechnologyExtensionVariants(baseWords, "iis")
+	hasAspx := false
+	hasAxd := false
+	for _, w := range aspnetMutated {
+		if w == "login.aspx" {
+			hasAspx = true
+		}
+		if w == "elmah.axd" {
+			hasAxd = true
+		}
+	}
+	if !hasAspx || !hasAxd {
+		t.Errorf("ASP.NET / IIS dynamic mutations başarısız: %v", aspnetMutated)
+	}
+}
+
+func TestSecretScanningAndDebugExposure(t *testing.T) {
+	// 1. AWS Key and JWT leak test
+	bodyWithAWS := "window.config = { 'apiKey': 'AKIAIOSFODNN7EXAMPLE', 'jwt': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c' };"
+	leaks := ScanBodyForSecrets(bodyWithAWS)
+	if len(leaks) < 2 {
+		t.Errorf("AWS Key ve JWT sızıntısı yakalanamadı: %v", leaks)
+	}
+
+	// 2. RSA Private Key leak test
+	bodyWithKey := "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0Y...\n-----END RSA PRIVATE KEY-----"
+	keyLeaks := ScanBodyForSecrets(bodyWithKey)
+	if len(keyLeaks) == 0 || keyLeaks[0] != "Private RSA/SSH Key" {
+		t.Errorf("Private Key sızıntısı yakalanamadı: %v", keyLeaks)
+	}
+
+	// 3. Database credentials leak test
+	bodyWithDB := "DATABASE_URL=postgres://postgres:SuperSecretP@ss123@db.prod.internal:5432/appdb"
+	dbLeaks := ScanBodyForSecrets(bodyWithDB)
+	if len(dbLeaks) == 0 || dbLeaks[0] != "Database Credentials" {
+		t.Errorf("Database connection string sızıntısı yakalanamadı: %v", dbLeaks)
+	}
+
+	// 4. Debug Mode Exposure Tests
+	springDebug := CheckDebugModeExposure("<html><body><h1>Whitelabel Error Page</h1><p>timestamp: 2026-08-28</p></body></html>")
+	if !strings.Contains(springDebug, "Spring Boot") {
+		t.Errorf("Spring Boot debug tespiti başarısız: %s", springDebug)
+	}
+
+	djangoDebug := CheckDebugModeExposure("Traceback (most recent call last): File django/core/handlers/exception.py, line 55, in inner")
+	if !strings.Contains(djangoDebug, "Django") {
+		t.Errorf("Django debug tespiti başarısız: %s", djangoDebug)
+	}
+}
+
+func TestSubdomainTakeoverFingerprints(t *testing.T) {
+	serviceGithub := CheckSubdomainTakeover("mycorp-docs.github.io")
+	if serviceGithub != "GitHub Pages" {
+		t.Errorf("GitHub Pages takeover fingerprint eşleşmedi: %s", serviceGithub)
+	}
+
+	serviceS3 := CheckSubdomainTakeover("assets.s3.amazonaws.com")
+	if serviceS3 != "AWS S3 Bucket" {
+		t.Errorf("AWS S3 takeover fingerprint eşleşmedi: %s", serviceS3)
+	}
+
+	serviceNone := CheckSubdomainTakeover("internal.corp.local")
+	if serviceNone != "" {
+		t.Errorf("Geçersiz takeover tespiti: %s", serviceNone)
+	}
+}

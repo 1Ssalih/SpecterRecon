@@ -120,17 +120,34 @@ func PrintDNSTable(findings []DNSFinding) {
 		return
 	}
 	tableData := pterm.TableData{
-		{"Hostname / FQDN", "IP Adresi", "Kayıt Tipi", "Kaynak"},
+		{"Hostname / Servis", "Kayıt Tipi", "IP / Hedef Değer", "Kaynak"},
 	}
 	for _, f := range findings {
 		src := "A/AAAA Çözümleme"
 		if f.Source == "subdomain_bruteforce" {
 			src = "🔍 Subdomain Brute-Force"
+		} else if f.Source == "srv_discovery" {
+			src = "🏢 Active Directory SRV"
+		} else if f.Source == "reverse_ptr" {
+			src = "🔄 Ters DNS (PTR)"
 		}
+
+		targetVal := f.IP
+		if f.Value != "" {
+			if targetVal != "" && f.RecordType != "SRV" && f.RecordType != "PTR" {
+				targetVal = fmt.Sprintf("%s (%s)", f.Value, targetVal)
+			} else {
+				targetVal = f.Value
+			}
+		}
+		if targetVal == "" {
+			targetVal = "-"
+		}
+
 		tableData = append(tableData, []string{
 			f.Hostname,
-			f.IP,
 			f.RecordType,
+			targetVal,
 			src,
 		})
 	}

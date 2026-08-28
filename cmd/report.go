@@ -23,7 +23,6 @@ var reportCmd = &cobra.Command{
   # Özel dizinden rapor üret
   specter-recon report -t "Production" -d scan_results/`,
 	Run: func(cmd *cobra.Command, args []string) {
-		core.PrintBanner(version)
 		core.EnsureOutputDir(repOutputDir)
 
 		// JSON çıktılarından oku

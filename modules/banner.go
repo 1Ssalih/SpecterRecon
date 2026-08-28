@@ -60,36 +60,59 @@ var ServiceRegexRules = []ServiceRegexRule{
 	},
 	// HTTP Servers & Web Frameworks
 	{
-		Pattern:     regexp.MustCompile(`(?i)Apache/([\d\.]+)`),
+		Pattern:     regexp.MustCompile(`(?i)Microsoft-HTTPAPI/([\d\.]+)`),
 		ServiceName: "http",
-		Description: "Apache HTTP Server",
+		Description: "Microsoft HTTPAPI (WinRM / IIS)",
 		ExtractVer:  func(m []string) string { return m[1] },
-		Priority:    10,
-		Confidence:  85,
-	},
-	{
-		Pattern:     regexp.MustCompile(`(?i)nginx/([\d\.]+)`),
-		ServiceName: "http",
-		Description: "nginx",
-		ExtractVer:  func(m []string) string { return m[1] },
-		Priority:    10,
-		Confidence:  85,
+		Priority:    5,
+		Confidence:  90,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)Microsoft-IIS/([\d\.]+)`),
 		ServiceName: "http",
 		Description: "Microsoft IIS",
 		ExtractVer:  func(m []string) string { return m[1] },
-		Priority:    10,
-		Confidence:  85,
+		Priority:    5,
+		Confidence:  90,
 	},
 	{
-		Pattern:     regexp.MustCompile(`(?i)lighttpd/([\d\.]+)`),
+		Pattern:     regexp.MustCompile(`(?i)Apache(?:/([\d\.]+))?`),
+		ServiceName: "http",
+		Description: "Apache HTTP Server",
+		ExtractVer: func(m []string) string {
+			if len(m) > 1 {
+				return m[1]
+			}
+			return ""
+		},
+		Priority:   10,
+		Confidence: 85,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)nginx(?:/([\d\.]+))?`),
+		ServiceName: "http",
+		Description: "nginx",
+		ExtractVer: func(m []string) string {
+			if len(m) > 1 {
+				return m[1]
+			}
+			return ""
+		},
+		Priority:   10,
+		Confidence: 85,
+	},
+	{
+		Pattern:     regexp.MustCompile(`(?i)lighttpd(?:/([\d\.]+))?`),
 		ServiceName: "http",
 		Description: "lighttpd",
-		ExtractVer:  func(m []string) string { return m[1] },
-		Priority:    10,
-		Confidence:  85,
+		ExtractVer: func(m []string) string {
+			if len(m) > 1 {
+				return m[1]
+			}
+			return ""
+		},
+		Priority:   10,
+		Confidence: 85,
 	},
 	{
 		Pattern:     regexp.MustCompile(`(?i)Werkzeug/([\d\.]+)`),
@@ -454,6 +477,7 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration, ho
 	}
 
 	tr := &http.Transport{
+		DisableKeepAlives: true,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 			ServerName:         sniHost,
@@ -756,13 +780,14 @@ func shouldTryHTTP(port int, probeRes core.ProbeResult) bool {
 	httpPorts := map[int]bool{
 		80: true, 443: true, 8080: true, 8443: true, 8000: true, 8888: true, 9000: true, 3000: true, 5000: true,
 		8008: true, 8081: true, 8088: true, 7001: true, 7077: true, 9090: true, 9200: true, 9300: true, 50000: true,
+		5985: true, 5986: true, 8444: true, 9443: true, 10443: true,
 	}
 	if httpPorts[port] {
 		return true
 	}
 	// Check if banner contains HTTP keywords
 	bUpper := strings.ToUpper(probeRes.Banner)
-	if strings.Contains(bUpper, "HTTP/1.") || strings.Contains(bUpper, "HTTP/2") || strings.Contains(bUpper, "<HTML") || strings.Contains(bUpper, "SERVER:") || strings.Contains(bUpper, "LOCATION:") {
+	if strings.Contains(bUpper, "HTTP/1.") || strings.Contains(bUpper, "HTTP/2") || strings.Contains(bUpper, "<HTML") || strings.Contains(bUpper, "SERVER:") || strings.Contains(bUpper, "LOCATION:") || strings.Contains(bUpper, "MICROSOFT-HTTPAPI") {
 		return true
 	}
 	// If service is completely unknown, try HTTP as fallback
@@ -976,10 +1001,13 @@ func GrabBannersAndServices(ports []core.PortInfo, concurrency int, timeout time
 	core.LogAudit("SERVICE_DETECTION_START", fmt.Sprintf("ports=%d", len(ports)), fmt.Sprintf("concurrency=%d", concurrency), "SUCCESS")
 
 	if concurrency <= 0 {
-		concurrency = 30
+		concurrency = 15
+	}
+	if concurrency > 15 {
+		concurrency = 15
 	}
 	if timeout <= 0 {
-		timeout = 3500 * time.Millisecond
+		timeout = 4000 * time.Millisecond
 	}
 
 	portChan := make(chan core.PortInfo, len(ports))
@@ -989,17 +1017,35 @@ func GrabBannersAndServices(ports []core.PortInfo, concurrency int, timeout time
 	close(portChan)
 
 	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex
-		services []core.ServiceDetail
+		wg        sync.WaitGroup
+		mu        sync.Mutex
+		services  []core.ServiceDetail
+		hostLocks = make(map[string]*sync.Mutex)
+		hostMu    sync.Mutex
 	)
+
+	getHostLock := func(ip string) *sync.Mutex {
+		hostMu.Lock()
+		defer hostMu.Unlock()
+		if l, exists := hostLocks[ip]; exists {
+			return l
+		}
+		l := &sync.Mutex{}
+		hostLocks[ip] = l
+		return l
+	}
 
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for p := range portChan {
+				hLock := getHostLock(p.IP)
+				hLock.Lock()
 				svc := AnalyzeService(p, timeout)
+				time.Sleep(35 * time.Millisecond)
+				hLock.Unlock()
+
 				mu.Lock()
 				services = append(services, svc)
 				mu.Unlock()

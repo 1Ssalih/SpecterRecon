@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/specter-recon/recon-tool/core"
+	"github.com/specter-recon/recon-tool/wordlists"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 )
@@ -30,6 +31,7 @@ type WordlistConfigFile struct {
 }
 
 // LoadServiceWordlistMap loads the service-to-wordlist configuration map for the specified sizeMode ("quick" or "full").
+// It seamlessly falls back to embedded YAML configuration if the external file is not present.
 func LoadServiceWordlistMap(mapFile, sizeMode string) map[string]string {
 	if mapFile == "" {
 		mapFile = "wordlists/service_wordlist_map.yaml"
@@ -40,6 +42,12 @@ func LoadServiceWordlistMap(mapFile, sizeMode string) map[string]string {
 
 	result := make(map[string]string)
 	data, err := os.ReadFile(mapFile)
+	if err != nil {
+		// Fallback to embedded YAML asset
+		data = []byte(wordlists.ServiceWordlistMapYAML)
+		err = nil
+	}
+
 	if err == nil {
 		var cfg WordlistConfigFile
 		if err := yaml.Unmarshal(data, &cfg); err == nil && (len(cfg.Quick) > 0 || len(cfg.Full) > 0) {
@@ -190,6 +198,14 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 		}
 	}
 
+	isWordlistAvailable := func(p string) bool {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+		_, ok := wordlists.GetEmbeddedWordlist(p)
+		return ok
+	}
+
 	var selectedLists []string
 	var matchedKeys []string
 	seenPaths := make(map[string]bool)
@@ -198,7 +214,7 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 		for _, key := range tier {
 			if matchFoundInHaystack(key) {
 				if path, ok := wordlistMap[key]; ok {
-					if _, err := os.Stat(path); err == nil {
+					if isWordlistAvailable(path) {
 						if !seenPaths[path] {
 							seenPaths[path] = true
 							selectedLists = append(selectedLists, path)
@@ -231,7 +247,7 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 			}
 		}
 		if !isPredefined && matchFoundInHaystack(key) {
-			if _, err := os.Stat(path); err == nil {
+			if isWordlistAvailable(path) {
 				if !seenPaths[path] {
 					seenPaths[path] = true
 					selectedLists = append(selectedLists, path)
@@ -246,7 +262,7 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 	}
 
 	if defPath, ok := wordlistMap["default"]; ok {
-		if _, err := os.Stat(defPath); err == nil {
+		if isWordlistAvailable(defPath) {
 			return []string{defPath}, "default"
 		}
 	}
@@ -254,24 +270,182 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 	return []string{defaultWordlist}, "common"
 }
 
-// LoadWordlist reads paths from wordlist file.
-func LoadWordlist(filepath string) []string {
-	file, err := os.Open(filepath)
+// GenerateTechnologyExtensionVariants expands base words with technology-specific file extensions based on detected web stack.
+func GenerateTechnologyExtensionVariants(words []string, matchedTech string) []string {
+	matchedTechLower := strings.ToLower(matchedTech)
+	var extraVariants []string
+
+	isIISorAspNet := strings.Contains(matchedTechLower, "iis") || strings.Contains(matchedTechLower, "aspnet") || strings.Contains(matchedTechLower, "microsoft")
+	isPHP := strings.Contains(matchedTechLower, "php") || strings.Contains(matchedTechLower, "wordpress") || strings.Contains(matchedTechLower, "drupal") || strings.Contains(matchedTechLower, "joomla")
+	isJava := strings.Contains(matchedTechLower, "tomcat") || strings.Contains(matchedTechLower, "springboot") || strings.Contains(matchedTechLower, "java")
+
+	// High-interest root names for mutation
+	targetRoots := []string{
+		"index", "default", "login", "admin", "api", "auth", "portal", "dashboard",
+		"test", "web", "config", "manage", "app", "service", "account", "user", "info",
+	}
+
+	if isIISorAspNet {
+		aspExts := []string{".aspx", ".asp", ".axd", ".ashx", ".asmx", ".config"}
+		for _, root := range targetRoots {
+			for _, ext := range aspExts {
+				extraVariants = append(extraVariants, root+ext)
+			}
+		}
+		extraVariants = append(extraVariants, "web.config", "global.asax", "elmah.axd", "trace.axd", "appsettings.json")
+	}
+
+	if isPHP {
+		phpExts := []string{".php", ".phtml", ".php.bak", ".inc"}
+		for _, root := range targetRoots {
+			for _, ext := range phpExts {
+				extraVariants = append(extraVariants, root+ext)
+			}
+		}
+		extraVariants = append(extraVariants, "config.php", "wp-config.php", "phpinfo.php", "database.php")
+	}
+
+	if isJava {
+		javaPaths := []string{
+			"actuator", "actuator/health", "actuator/env", "actuator/beans", "actuator/metrics",
+			"swagger-ui.html", "v2/api-docs", "v3/api-docs", "manager/html", "host-manager/html",
+		}
+		extraVariants = append(extraVariants, javaPaths...)
+	}
+
+	return MergeUnique(words, extraVariants)
+}
+
+// AuditHTTPMethods sends an OPTIONS request to extract Allow / Public headers and highlight dangerous methods (TRACE, PUT, DELETE).
+func AuditHTTPMethods(client *http.Client, baseURL string, targetHost string) []string {
+	req, err := http.NewRequest("OPTIONS", baseURL, nil)
 	if err != nil {
-		core.LogWarning("Wordlist dosyası bulunamadı: %s", filepath)
 		return nil
 	}
-	defer file.Close()
+	if targetHost != "" {
+		req.Host = targetHost
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.8.0")
 
-	var words []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" && !strings.HasPrefix(line, "#") {
-			words = append(words, strings.TrimPrefix(line, "/"))
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	allowHeader := resp.Header.Get("Allow")
+	if allowHeader == "" {
+		allowHeader = resp.Header.Get("Public")
+	}
+
+	if allowHeader == "" {
+		return nil
+	}
+
+	var methods []string
+	seen := make(map[string]bool)
+	for _, m := range strings.Split(allowHeader, ",") {
+		mClean := strings.ToUpper(strings.TrimSpace(m))
+		if mClean != "" && !seen[mClean] {
+			seen[mClean] = true
+			methods = append(methods, mClean)
 		}
 	}
-	return words
+
+	if len(methods) > 0 {
+		core.LogSuccess("HTTP Desteklenen Metotlar Keşfedildi (%s): [%s]", baseURL, strings.Join(methods, ", "))
+		for _, m := range methods {
+			if m == "TRACE" || m == "TRACK" {
+				core.LogWarning("Güvensiz HTTP Metodu Aktif (%s): %s (XST - Cross-Site Tracing Riski)", baseURL, m)
+			}
+			if m == "PUT" || m == "DELETE" || m == "PROPFIND" {
+				core.LogInfo("Yazma/Yönetim Metodu Aktif (%s): %s (WebDAV / Dosya Yönetimi)", baseURL, m)
+			}
+		}
+	}
+
+	return methods
+}
+
+// FetchRobotsTxtPaths requests /robots.txt and parses Disallow / Allow directives into candidate paths.
+func FetchRobotsTxtPaths(client *http.Client, baseURL string, targetHost string) []string {
+	robotsURL := fmt.Sprintf("%s/robots.txt", strings.TrimSuffix(baseURL, "/"))
+	req, err := http.NewRequest("GET", robotsURL, nil)
+	if err != nil {
+		return nil
+	}
+	if targetHost != "" {
+		req.Host = targetHost
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.8.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil
+	}
+
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 32768))
+	lines := strings.Split(string(bodyBytes), "\n")
+
+	var discovered []string
+	seen := make(map[string]bool)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(line), "disallow:") || strings.HasPrefix(strings.ToLower(line), "allow:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				path := strings.TrimSpace(parts[1])
+				path = strings.TrimPrefix(path, "/")
+				path = strings.Split(path, "?")[0] // Strip query params
+				if path != "" && path != "*" && !seen[path] {
+					seen[path] = true
+					discovered = append(discovered, path)
+				}
+			}
+		}
+	}
+
+	if len(discovered) > 0 {
+		core.LogSuccess("robots.txt İçeriğinden %d Adet Gizli/Özel Yol Keşfedildi (%s)", len(discovered), baseURL)
+	}
+
+	return discovered
+}
+
+// LoadWordlist reads paths from wordlist file with embedded fallback.
+func LoadWordlist(filepath string) []string {
+	if filepath == "" {
+		return nil
+	}
+	file, err := os.Open(filepath)
+	if err == nil {
+		defer file.Close()
+		var words []string
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line != "" && !strings.HasPrefix(line, "#") {
+				words = append(words, strings.TrimPrefix(line, "/"))
+			}
+		}
+		if len(words) > 0 {
+			return words
+		}
+	}
+
+	// Embedded memory fallback
+	if embedded, ok := wordlists.GetEmbeddedWordlist(filepath); ok && len(embedded) > 0 {
+		return embedded
+	}
+
+	core.LogWarning("Wordlist dosyası bulunamadı: %s", filepath)
+	return nil
 }
 
 func isSensitivePath(path string) bool {
@@ -383,8 +557,66 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 	return BaselineResponse{}
 }
 
-// FuzzSingleURL requests a single path and evaluates response with Catch-All baseline filter and rate limiter support.
-func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFilter map[int]bool, limiter *rate.Limiter, baseline BaselineResponse, targetHost string) *core.DirFuzzFinding {
+var (
+	regexAWSAccessKey = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
+	regexGoogleAPIKey = regexp.MustCompile(`\bAIza[0-9A-Za-z\-_]{35}\b`)
+	regexGitHubToken  = regexp.MustCompile(`\bghp_[0-9a-zA-Z]{36}\b`)
+	regexSlackWebhook = regexp.MustCompile(`https:\/\/hooks\.slack\.com\/services\/T[a-zA-Z0-9_]+\/B[a-zA-Z0-9_]+\/[a-zA-Z0-9_]+`)
+	regexJWT          = regexp.MustCompile(`\beyJ[a-zA-Z0-9\-_]{10,}\.eyJ[a-zA-Z0-9\-_]{10,}\.[a-zA-Z0-9\-_]+\b`)
+	regexPrivateKey   = regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----`)
+	regexDBConnString = regexp.MustCompile(`\b(?:postgres|mysql|mongodb|redis|amqp):\/\/[^:\s]+:[^@\s]+@[^\s]+\b`)
+)
+
+// ScanBodyForSecrets inspects HTTP response bodies for sensitive credentials, tokens, or private keys.
+func ScanBodyForSecrets(body string) []string {
+	var leaks []string
+	if regexPrivateKey.MatchString(body) {
+		leaks = append(leaks, "Private RSA/SSH Key")
+	}
+	if regexAWSAccessKey.MatchString(body) {
+		leaks = append(leaks, "AWS Access Key")
+	}
+	if regexGoogleAPIKey.MatchString(body) {
+		leaks = append(leaks, "Google API Key")
+	}
+	if regexGitHubToken.MatchString(body) {
+		leaks = append(leaks, "GitHub PAT Token")
+	}
+	if regexSlackWebhook.MatchString(body) {
+		leaks = append(leaks, "Slack Webhook URL")
+	}
+	if regexDBConnString.MatchString(body) {
+		leaks = append(leaks, "Database Credentials")
+	}
+	if regexJWT.MatchString(body) {
+		leaks = append(leaks, "JWT Token")
+	}
+	return leaks
+}
+
+// CheckDebugModeExposure detects framework debug stack traces and error pages.
+func CheckDebugModeExposure(body string) string {
+	lower := strings.ToLower(body)
+	if strings.Contains(lower, "whitelabel error page") && strings.Contains(lower, "timestamp") {
+		return "Spring Boot Whitelabel (Debug Stack)"
+	}
+	if strings.Contains(lower, "django_settings_module") || (strings.Contains(lower, "traceback (most recent call last)") && strings.Contains(lower, "django")) {
+		return "Django Debug Mode (Stack Trace)"
+	}
+	if strings.Contains(lower, "whoops! there was an error") || strings.Contains(lower, "ignition-app") {
+		return "Laravel Ignition Debug (Whoops)"
+	}
+	if strings.Contains(lower, "fatal error:") && strings.Contains(lower, "stack trace:") {
+		return "PHP Fatal Error / Stack Trace"
+	}
+	if strings.Contains(lower, "server error in '/' application") && strings.Contains(lower, "version information:") {
+		return "ASP.NET Yellow Screen (Stack Trace)"
+	}
+	return ""
+}
+
+// FuzzSingleURL requests a single path and evaluates response with Catch-All baseline filter, secret leak scanning, and rate limiter support.
+func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFilter map[int]bool, limiter *rate.Limiter, baseline BaselineResponse, targetHost string, defaultMethods []string) *core.DirFuzzFinding {
 	if limiter != nil {
 		_ = limiter.Wait(context.Background())
 	}
@@ -415,7 +647,7 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 	latency := float64(time.Since(start).Nanoseconds()) / 1e6
 
 	if statusFilter[resp.StatusCode] {
-		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 16384))
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 32768))
 		bodyStr := string(bodyBytes)
 		contentLen := int64(len(bodyBytes))
 
@@ -433,6 +665,31 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 
 		location := resp.Header.Get("Location")
 		isSensitive := isSensitivePath(path)
+
+		// Passive secret & credential leak scanning on response body
+		leaks := ScanBodyForSecrets(bodyStr)
+		debugMode := CheckDebugModeExposure(bodyStr)
+
+		if len(leaks) > 0 {
+			isSensitive = true
+			leakTag := fmt.Sprintf("[SIZINTI: %s]", strings.Join(leaks, ", "))
+			if title == "" {
+				title = leakTag
+			} else {
+				title = title + " " + leakTag
+			}
+			core.LogWarning("🚨 HASSAS BİLGİ SIZINTISI (%s): %s ➔ %s", strings.Join(leaks, ", "), url, leakTag)
+		}
+
+		if debugMode != "" {
+			isSensitive = true
+			if title == "" {
+				title = "[" + debugMode + "]"
+			} else {
+				title = title + " [" + debugMode + "]"
+			}
+			core.LogWarning("⚠️ DEBUG MODU / HATA SAYFASI AÇIK: %s ➔ %s", url, debugMode)
+		}
 
 		// 1. Catch-All Baseline Suppression
 		if baseline.IsCatchAll && resp.StatusCode == baseline.StatusCode {
@@ -463,6 +720,18 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 			}
 		}
 
+		// Extract allowed methods from response if provided by endpoint (e.g. 405 Method Not Allowed)
+		var allowedMethods []string
+		if allowHdr := resp.Header.Get("Allow"); allowHdr != "" {
+			for _, m := range strings.Split(allowHdr, ",") {
+				if mClean := strings.ToUpper(strings.TrimSpace(m)); mClean != "" {
+					allowedMethods = append(allowedMethods, mClean)
+				}
+			}
+		} else {
+			allowedMethods = defaultMethods
+		}
+
 		return &core.DirFuzzFinding{
 			URL:              url,
 			Path:             "/" + path,
@@ -474,6 +743,7 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 			IsSensitive:      isSensitive,
 			WordlistMatched:  matchTag,
 			MatchedTech:      matchTag,
+			AllowedMethods:   allowedMethods,
 		}
 	}
 
@@ -485,12 +755,8 @@ func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concu
 	return FuzzTargetServiceWithHost(baseURL, "", wordlist, matchTag, concurrency, delayMs)
 }
 
-// FuzzTargetServiceWithHost runs directory fuzzing with explicit Host header and baseline Catch-All suppression.
+// FuzzTargetServiceWithHost runs directory fuzzing with explicit Host header, HTTP methods audit, and baseline Catch-All suppression.
 func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []string, matchTag string, concurrency int, delayMs int) []core.DirFuzzFinding {
-	totalWords := len(wordlist)
-	core.LogInfo("Dizin Taraması başlatılıyor: Hedef='%s', Liste='%s', Kelime Sayısı=%d", baseURL, matchTag, totalWords)
-	core.LogAudit("DIR_FUZZ_START", baseURL, fmt.Sprintf("words=%d, matchTag=%s, concurrency=%d, host=%s", totalWords, matchTag, concurrency, targetHost), "SUCCESS")
-
 	if concurrency <= 0 {
 		concurrency = 25
 	}
@@ -530,7 +796,23 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 		},
 	}
 
-	// Baseline Catch-All Probing
+	// 1. Audit HTTP Methods on root URL (OPTIONS request)
+	rootAllowedMethods := AuditHTTPMethods(client, baseURL, targetHost)
+
+	// 2. Fetch robots.txt and harvest crawler-excluded internal paths
+	robotsPaths := FetchRobotsTxtPaths(client, baseURL, targetHost)
+
+	// 3. Dynamic extension expansion based on technology
+	enrichedWordlist := GenerateTechnologyExtensionVariants(wordlist, matchTag)
+	if len(robotsPaths) > 0 {
+		enrichedWordlist = MergeUnique(robotsPaths, enrichedWordlist)
+	}
+
+	totalWords := len(enrichedWordlist)
+	core.LogInfo("Dizin Taraması başlatılıyor: Hedef='%s', Liste='%s', Kelime Sayısı=%d", baseURL, matchTag, totalWords)
+	core.LogAudit("DIR_FUZZ_START", baseURL, fmt.Sprintf("words=%d, matchTag=%s, concurrency=%d, host=%s", totalWords, matchTag, concurrency, targetHost), "SUCCESS")
+
+	// 4. Baseline Catch-All Probing
 	baseline := DetectBaselineResponse(client, baseURL, targetHost)
 	if baseline.IsUnresponsive {
 		core.LogWarning("Hedef web servisi ('%s') HTTP isteklerine yanıt vermiyor. Dizin fuzzing adımı atlandı.", baseURL)
@@ -538,7 +820,7 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 	}
 
 	wordChan := make(chan string, totalWords)
-	for _, w := range wordlist {
+	for _, w := range enrichedWordlist {
 		wordChan <- w
 	}
 	close(wordChan)
@@ -557,7 +839,7 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 		go func() {
 			defer wg.Done()
 			for w := range wordChan {
-				res := FuzzSingleURL(client, baseURL, w, matchTag, statusFilter, limiter, baseline, targetHost)
+				res := FuzzSingleURL(client, baseURL, w, matchTag, statusFilter, limiter, baseline, targetHost, rootAllowedMethods)
 				curr := atomic.AddInt64(&processedCount, 1)
 
 				if res != nil {
@@ -612,6 +894,56 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 	}
 
 	wg.Wait()
+
+	// 5. Recursive Fuzzing on Discovered High-Value Directories (e.g. /admin/, /api/, /v1/, /portal/, /app/, /backup/)
+	highValueDirNames := map[string]bool{
+		"admin": true, "api": true, "v1": true, "v2": true, "portal": true, "dev": true,
+		"app": true, "backup": true, "manage": true, "dashboard": true, "internal": true,
+		"private": true, "secure": true, "panel": true, "auth": true, "ws": true, "rest": true,
+	}
+
+	var recursiveDirs []string
+	seenRecDirs := make(map[string]bool)
+	for _, f := range findings {
+		cleanPath := strings.ToLower(strings.Trim(f.Path, "/"))
+		// Only recurse on top-level discovered directories without extensions
+		if cleanPath != "" && !strings.Contains(cleanPath, "/") && !strings.Contains(cleanPath, ".") {
+			isDirRedirect := (f.StatusCode == 301 || f.StatusCode == 302) && strings.HasSuffix(f.RedirectLocation, "/")
+			if highValueDirNames[cleanPath] || isDirRedirect {
+				if !seenRecDirs[cleanPath] {
+					seenRecDirs[cleanPath] = true
+					recursiveDirs = append(recursiveDirs, cleanPath)
+				}
+			}
+		}
+	}
+
+	if len(recursiveDirs) > 0 {
+		if len(recursiveDirs) > 5 {
+			recursiveDirs = recursiveDirs[:5]
+		}
+		recursiveWords := []string{
+			"login", "users", "admin", "config", "settings", "keys", "backup", "db", "sql",
+			"logs", "test", "v1", "v2", "swagger.json", "openapi.json", "env", "health", "status",
+			"export", "import", "upload", "download", "profile", "auth", "token", "session",
+		}
+		core.LogInfo("Özyinelemeli (Recursive) Dizin Keşfi: %d kök dizin derinleştiriliyor (%s)...",
+			len(recursiveDirs), strings.Join(recursiveDirs, ", "))
+
+		for _, rDir := range recursiveDirs {
+			for _, rWord := range recursiveWords {
+				subPath := rDir + "/" + rWord
+				if res := FuzzSingleURL(client, baseURL, subPath, matchTag, statusFilter, limiter, baseline, targetHost, rootAllowedMethods); res != nil {
+					findings = append(findings, *res)
+					tag := ""
+					if res.IsSensitive {
+						tag = " [KRİTİK DOSYA]"
+					}
+					core.LogSuccess("Özyinelemeli Dizin Bulundu: [%d] %s (Boyut: %dB)%s", res.StatusCode, res.URL, res.ContentLength, tag)
+				}
+			}
+		}
+	}
 
 	sort.Slice(findings, func(i, j int) bool {
 		return findings[i].Path < findings[j].Path
@@ -705,4 +1037,3 @@ func RunDirFuzzing(services []core.ServiceDetail, wordlistSizeMode string, defau
 
 	return allFindings, nil
 }
-

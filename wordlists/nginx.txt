@@ -1,0 +1,11 @@
+nginx-status
+nginx_status
+status
+stub_status
+test.html
+50x.html
+404.html
+index.html
+index.php
+admin/
+api/

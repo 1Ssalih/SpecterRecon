@@ -780,6 +780,272 @@ func ProbeRDPService(ip string, port int, timeout time.Duration) (core.ProbeResu
 	return core.ProbeResult{}, false
 }
 
+// ProbeMSSQLService sends a TDS 7.2 Pre-Login packet to extract Microsoft SQL Server exact major/minor/build version.
+func ProbeMSSQLService(ip string, port int, timeout time.Duration) (core.ProbeResult, bool) {
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return core.ProbeResult{}, false
+	}
+	defer conn.Close()
+
+	tdsPacket := []byte{
+		0x12, 0x01, 0x00, 0x2c, 0x00, 0x00, 0x01, 0x00,
+		0x00, 0x00, 0x1a, 0x00, 0x06,
+		0x01, 0x00, 0x20, 0x00, 0x01,
+		0x02, 0x00, 0x21, 0x00, 0x01,
+		0x03, 0x00, 0x22, 0x00, 0x04,
+		0xff,
+		0x0f, 0x00, 0x10, 0x5c, 0x00, 0x00,
+		0x00,
+		0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+
+	_ = conn.SetWriteDeadline(time.Now().Add(1000 * time.Millisecond))
+	if _, err := conn.Write(tdsPacket); err != nil {
+		return core.ProbeResult{}, false
+	}
+
+	buf := make([]byte, 1024)
+	_ = conn.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
+	n, err := conn.Read(buf)
+	if err != nil || n < 8 {
+		return core.ProbeResult{}, false
+	}
+
+	if (buf[0] == 0x04 || buf[0] == 0x12) && n >= 26 {
+		for i := 8; i < n-5; i += 5 {
+			token := buf[i]
+			if token == 0xff {
+				break
+			}
+			if token == 0x00 { // VERSION token
+				offset := int(buf[i+1])<<8 | int(buf[i+2])
+				length := int(buf[i+3])<<8 | int(buf[i+4])
+				targetOffset := offset
+				if targetOffset < 8 || targetOffset+length > n {
+					if offset+8+length <= n {
+						targetOffset = offset + 8
+					}
+				}
+				if targetOffset >= 0 && targetOffset+length <= n && length >= 4 {
+					major := int(buf[targetOffset])
+					minor := int(buf[targetOffset+1])
+					build := int(buf[targetOffset+2])<<8 | int(buf[targetOffset+3])
+
+					editionName := "Microsoft SQL Server"
+					switch major {
+					case 16:
+						editionName = "Microsoft SQL Server 2022"
+					case 15:
+						editionName = "Microsoft SQL Server 2019"
+					case 14:
+						editionName = "Microsoft SQL Server 2017"
+					case 13:
+						editionName = "Microsoft SQL Server 2016"
+					case 12:
+						editionName = "Microsoft SQL Server 2014"
+					case 11:
+						editionName = "Microsoft SQL Server 2012"
+					case 10:
+						if minor == 50 {
+							editionName = "Microsoft SQL Server 2008 R2"
+						} else {
+							editionName = "Microsoft SQL Server 2008"
+						}
+					case 9:
+						editionName = "Microsoft SQL Server 2005"
+					}
+
+					verStr := fmt.Sprintf("%d.%d.%d", major, minor, build)
+					desc := fmt.Sprintf("%s (%s)", editionName, verStr)
+					banner := fmt.Sprintf("TDS Pre-Login Response: %s (v%s)", editionName, verStr)
+
+					return core.ProbeResult{
+						ServiceName: "ms-sql-s",
+						ServiceDesc: desc,
+						Version:     verStr,
+						Banner:      banner,
+						ProbeUsed:   "tds_prelogin_probe",
+						Confidence:  95,
+						Evidence: []core.VersionEvidence{
+							{
+								Source:     "tds_prelogin_handshake",
+								Detail:     fmt.Sprintf("Major: %d, Minor: %d, Build: %d (%s)", major, minor, build, editionName),
+								Confidence: 95,
+							},
+						},
+						IsFinal: true,
+					}, true
+				}
+			}
+		}
+
+		return core.ProbeResult{
+			ServiceName: "ms-sql-s",
+			ServiceDesc: "Microsoft SQL Server",
+			Banner:      "TDS Pre-Login Handshake Accepted",
+			ProbeUsed:   "tds_prelogin_probe",
+			Confidence:  85,
+			Evidence: []core.VersionEvidence{
+				{
+					Source:     "tds_prelogin",
+					Detail:     "TDS 7.x Pre-Login Packet Handshake",
+					Confidence: 85,
+				},
+			},
+			IsFinal: true,
+		}, true
+	}
+
+	return core.ProbeResult{}, false
+}
+
+// ProbeWinRMService queries the WS-Management /wsman SOAP endpoint to identify Windows Server version and auth protocols.
+func ProbeWinRMService(ip string, port int, timeout time.Duration) (core.ProbeResult, bool) {
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return core.ProbeResult{}, false
+	}
+	defer conn.Close()
+
+	soapBody := `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:wsmid="http://schemas.dmtf.org/wbem/wsman/identity/1/wsmanidentity.xsd"><s:Header/><s:Body><wsmid:Identify/></s:Body></s:Envelope>`
+	req := fmt.Sprintf("POST /wsman HTTP/1.1\r\nHost: %s:%d\r\nUser-Agent: SpecterRecon/0.8.0\r\nContent-Type: application/soap+xml;charset=UTF-8\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		ip, port, len(soapBody), soapBody)
+
+	_ = conn.SetWriteDeadline(time.Now().Add(1200 * time.Millisecond))
+	if _, err := conn.Write([]byte(req)); err != nil {
+		return core.ProbeResult{}, false
+	}
+
+	buf := make([]byte, 8192)
+	_ = conn.SetReadDeadline(time.Now().Add(1800 * time.Millisecond))
+	n, err := conn.Read(buf)
+	if err != nil || n == 0 {
+		return core.ProbeResult{}, false
+	}
+
+	respStr := string(buf[:n])
+	if strings.Contains(respStr, "Microsoft-HTTPAPI") || strings.Contains(respStr, "wsman") || strings.Contains(respStr, "wsmid:") {
+		var productVer, vendor string
+
+		if m := regexp.MustCompile(`(?i)<wsmid:ProductVersion[^>]*>([^<]+)</wsmid:ProductVersion>`).FindStringSubmatch(respStr); len(m) > 1 {
+			productVer = strings.TrimSpace(m[1])
+		}
+		if m := regexp.MustCompile(`(?i)<wsmid:ProductVendor[^>]*>([^<]+)</wsmid:ProductVendor>`).FindStringSubmatch(respStr); len(m) > 1 {
+			vendor = strings.TrimSpace(m[1])
+		}
+
+		desc := "Microsoft WinRM (WS-Management)"
+		if productVer != "" {
+			desc = fmt.Sprintf("Microsoft WinRM (%s)", productVer)
+		}
+		banner := "Microsoft-HTTPAPI/2.0 (WinRM /wsman)"
+		if vendor != "" && productVer != "" {
+			banner = fmt.Sprintf("%s %s (WS-Management)", vendor, productVer)
+		}
+
+		return core.ProbeResult{
+			ServiceName: "http",
+			ServiceDesc: desc,
+			Version:     productVer,
+			Banner:      banner,
+			ProbeUsed:   "winrm_wsman_probe",
+			Confidence:  90,
+			Evidence: []core.VersionEvidence{
+				{
+					Source:     "wsman_soap_identify",
+					Detail:     banner,
+					Confidence: 90,
+				},
+			},
+			IsFinal: true,
+		}, true
+	}
+
+	return core.ProbeResult{}, false
+}
+
+// ProbeOracleTNSService probes Oracle TNS Listener on port 1521.
+func ProbeOracleTNSService(ip string, port int, timeout time.Duration) (core.ProbeResult, bool) {
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return core.ProbeResult{}, false
+	}
+	defer conn.Close()
+
+	connectData := "(DESCRIPTION=(CONNECT_DATA=(COMMAND=version)))"
+	pktLen := 58 + len(connectData)
+	tnsPacket := []byte{
+		byte(pktLen >> 8), byte(pktLen & 0xff),
+		0x00, 0x00,
+		0x01,
+		0x00,
+		0x00, 0x00,
+		0x01, 0x39,
+		0x01, 0x2c,
+		0x00, 0x00,
+		0x08, 0x00,
+		0x7f, 0xff,
+		0x7f, 0x08,
+		0x00, 0x00,
+		0x01, 0x00,
+		byte(len(connectData) >> 8), byte(len(connectData) & 0xff),
+		0x00, 0x3a,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+	tnsPacket = append(tnsPacket, []byte(connectData)...)
+
+	_ = conn.SetWriteDeadline(time.Now().Add(1000 * time.Millisecond))
+	if _, err := conn.Write(tnsPacket); err != nil {
+		return core.ProbeResult{}, false
+	}
+
+	buf := make([]byte, 4096)
+	_ = conn.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
+	n, err := conn.Read(buf)
+	if err != nil || n < 8 {
+		return core.ProbeResult{}, false
+	}
+
+	respStr := string(buf[:n])
+	if strings.Contains(respStr, "TNSLSNR") || strings.Contains(respStr, "Oracle") || strings.Contains(respStr, "VSN") {
+		ver := ""
+		re := regexp.MustCompile(`(?i)Version\s+([\d.]+)`)
+		if m := re.FindStringSubmatch(respStr); len(m) > 1 {
+			ver = m[1]
+		}
+		banner := SanitizeBanner(respStr)
+		if len(banner) > 100 {
+			banner = banner[:97] + "..."
+		}
+
+		return core.ProbeResult{
+			ServiceName: "oracle-tns",
+			ServiceDesc: "Oracle TNS Listener",
+			Version:     ver,
+			Banner:      banner,
+			ProbeUsed:   "oracle_tns_probe",
+			Confidence:  90,
+			Evidence: []core.VersionEvidence{
+				{
+					Source:     "oracle_tns_connect",
+					Detail:     banner,
+					Confidence: 90,
+				},
+			},
+			IsFinal: true,
+		}, true
+	}
+
+	return core.ProbeResult{}, false
+}
+
 // MatchBannerAgainstRules evaluates text against prioritized match rules and returns the highest-scoring match.
 func MatchBannerAgainstRules(spec ProbeSpec, text string) core.ProbeResult {
 	if text == "" {
@@ -975,9 +1241,17 @@ func ProbeTLSService(ip string, port int, timeout time.Duration, hostname ...str
 
 // GrabServiceBanner connects to a target TCP port, listens passively, probes safely, and extracts high-confidence service info.
 func GrabServiceBanner(ip string, port int, timeout time.Duration) core.ProbeResult {
+	if timeout <= 0 {
+		timeout = 3500 * time.Millisecond
+	}
+
 	// 1. Specialized protocol probes for ports that require tailored negotiation
 	if port == 445 || port == 139 {
 		if res, ok := ProbeSMBService(ip, port, timeout); ok && res.Confidence >= 75 {
+			return res
+		}
+		time.Sleep(100 * time.Millisecond)
+		if res, ok := ProbeSMBService(ip, port, timeout+500*time.Millisecond); ok && res.Confidence >= 75 {
 			return res
 		}
 	}
@@ -987,10 +1261,48 @@ func GrabServiceBanner(ip string, port int, timeout time.Duration) core.ProbeRes
 		if res, ok := ProbeLDAPService(ip, port, isSSL, timeout); ok && res.Confidence >= 75 {
 			return res
 		}
+		time.Sleep(100 * time.Millisecond)
+		if res, ok := ProbeLDAPService(ip, port, isSSL, timeout+500*time.Millisecond); ok && res.Confidence >= 75 {
+			return res
+		}
 	}
 
 	if port == 3389 {
 		if res, ok := ProbeRDPService(ip, port, timeout); ok && res.Confidence >= 75 {
+			return res
+		}
+		time.Sleep(100 * time.Millisecond)
+		if res, ok := ProbeRDPService(ip, port, timeout+500*time.Millisecond); ok && res.Confidence >= 75 {
+			return res
+		}
+	}
+
+	if port == 1433 {
+		if res, ok := ProbeMSSQLService(ip, port, timeout); ok && res.Confidence >= 75 {
+			return res
+		}
+		time.Sleep(100 * time.Millisecond)
+		if res, ok := ProbeMSSQLService(ip, port, timeout+500*time.Millisecond); ok && res.Confidence >= 75 {
+			return res
+		}
+	}
+
+	if port == 5985 || port == 5986 {
+		if res, ok := ProbeWinRMService(ip, port, timeout); ok && res.Confidence >= 75 {
+			return res
+		}
+		time.Sleep(100 * time.Millisecond)
+		if res, ok := ProbeWinRMService(ip, port, timeout+500*time.Millisecond); ok && res.Confidence >= 75 {
+			return res
+		}
+	}
+
+	if port == 1521 {
+		if res, ok := ProbeOracleTNSService(ip, port, timeout); ok && res.Confidence >= 75 {
+			return res
+		}
+		time.Sleep(100 * time.Millisecond)
+		if res, ok := ProbeOracleTNSService(ip, port, timeout+500*time.Millisecond); ok && res.Confidence >= 75 {
 			return res
 		}
 	}
@@ -998,7 +1310,11 @@ func GrabServiceBanner(ip string, port int, timeout time.Duration) core.ProbeRes
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
-		return core.ProbeResult{}
+		time.Sleep(120 * time.Millisecond)
+		conn, err = net.DialTimeout("tcp", addr, timeout)
+		if err != nil {
+			return core.ProbeResult{}
+		}
 	}
 	defer conn.Close()
 
@@ -1015,7 +1331,7 @@ func GrabServiceBanner(ip string, port int, timeout time.Duration) core.ProbeRes
 	// Step 1: Passive reading (for read-first protocols like SSH, FTP, SMTP, MySQL)
 	if spec.ReadFirst {
 		for i := 0; i < maxReads; i++ {
-			_ = conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
+			_ = conn.SetReadDeadline(time.Now().Add(1800 * time.Millisecond))
 			n, rErr := conn.Read(buf)
 			if n > 0 {
 				allData = append(allData, buf[:n]...)

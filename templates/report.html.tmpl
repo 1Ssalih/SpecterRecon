@@ -238,16 +238,16 @@
     <!-- DNS Enumeration & Subdomains -->
     <div class="section-card">
       <div class="section-header">
-        <div class="section-title"><span>📡</span> DNS Enumeration & Subdomainler</div>
+        <div class="section-title"><span>📡</span> DNS & Altyapı Keşfi (Active Directory, SRV, PTR, MX, TXT)</div>
         <span class="section-badge">{{ len .DNSFindings }} Kayıt</span>
       </div>
       <div class="table-container">
         <table>
           <thead>
             <tr>
-              <th>Hostname / Subdomain</th>
-              <th>IP Adresi</th>
+              <th>Hostname / Servis</th>
               <th>Kayıt Tipi</th>
+              <th>IP / Değer</th>
               <th>Kaynak</th>
             </tr>
           </thead>
@@ -255,11 +255,26 @@
             {{ range .DNSFindings }}
             <tr>
               <td><strong>{{ .Hostname }}</strong></td>
-              <td><span class="code-tag">{{ .IP }}</span></td>
               <td><span class="badge badge-dns">{{ .RecordType }}</span></td>
+              <td>
+                {{ if .Value }}
+                  <span class="code-tag">{{ .Value }}</span>
+                  {{ if and .IP (ne .RecordType "SRV") (ne .RecordType "PTR") }}
+                    <small style="color:var(--text-muted)">({{ .IP }})</small>
+                  {{ end }}
+                {{ else if .IP }}
+                  <span class="code-tag">{{ .IP }}</span>
+                {{ else }}
+                  <span style="color:var(--text-muted)">-</span>
+                {{ end }}
+              </td>
               <td>
                 {{ if eq .Source "subdomain_bruteforce" }}
                   <span style="color:var(--cyan-accent)">🔍 Subdomain Brute-Force</span>
+                {{ else if eq .Source "srv_discovery" }}
+                  <span style="color:#a855f7">🏢 Active Directory SRV</span>
+                {{ else if eq .Source "reverse_ptr" }}
+                  <span style="color:#eab308">🔄 Ters DNS (PTR)</span>
                 {{ else }}
                   <span style="color:var(--text-muted)">Root DNS Çözümleme</span>
                 {{ end }}
@@ -346,7 +361,7 @@
     <!-- Web Findings -->
     <div class="section-card">
       <div class="section-header">
-        <div class="section-title"><span>📁</span> Web Dizin & Dosya Bulguları (Context-Aware Fuzzer)</div>
+        <div class="section-title"><span>📁</span> Web Dizin & Dosya Bulguları (Context-Aware Fuzzer & Method Audit)</div>
         <span class="section-badge">{{ .TotalFindings }} Bulgu</span>
       </div>
       <div class="table-container">
@@ -357,7 +372,7 @@
               <th>Hedef URL & Yol</th>
               <th>Boyut</th>
               <th>Sayfa Başlığı / Yönlendirme</th>
-              <th>Kritiklik / Eşleşme</th>
+              <th>Metotlar / Eşleşme</th>
             </tr>
           </thead>
           <tbody>
@@ -399,6 +414,19 @@
                       <span class="badge badge-dns">📁 {{ .WordlistMatched }}</span>
                     {{ else }}
                       <span style="color:var(--text-muted); font-size:0.75rem">Standart</span>
+                    {{ end }}
+                    {{ if .AllowedMethods }}
+                      <div style="margin-top:0.25rem;">
+                        {{ range .AllowedMethods }}
+                          {{ if or (eq . "TRACE") (eq . "TRACK") }}
+                            <span class="badge badge-crit" style="font-size:0.65rem;">{{ . }}</span>
+                          {{ else if or (eq . "PUT") (eq . "DELETE") }}
+                            <span class="badge badge-high" style="font-size:0.65rem;">{{ . }}</span>
+                          {{ else }}
+                            <span class="badge badge-low" style="font-size:0.65rem;">{{ . }}</span>
+                          {{ end }}
+                        {{ end }}
+                      </div>
                     {{ end }}
                   </td>
                 </tr>

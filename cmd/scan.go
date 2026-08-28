@@ -58,7 +58,6 @@ Entegrasyon Modları:
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
-		core.PrintBanner(version)
 		if !verifyScopePermission(target) {
 			return
 		}
@@ -127,16 +126,24 @@ Entegrasyon Modları:
 		core.LogStep("Adım 1: Host Discovery")
 		var hosts []core.HostInfo
 		if len(dnsFindings) > 0 {
+			seenDiscoveryIPs := make(map[string]string)
 			for _, df := range dnsFindings {
-				foundHosts, _ := modules.DiscoverHosts(df.IP, nil, 2*time.Second, threadsFlag, "")
+				if df.IP != "" {
+					if existing, exists := seenDiscoveryIPs[df.IP]; !exists || (existing == target && df.Hostname != target) {
+						seenDiscoveryIPs[df.IP] = df.Hostname
+					}
+				}
+			}
+			for ip, hn := range seenDiscoveryIPs {
+				foundHosts, _ := modules.DiscoverHosts(ip, nil, 2*time.Second, threadsFlag, "")
 				if len(foundHosts) > 0 {
 					for i := range foundHosts {
-						foundHosts[i].Hostname = df.Hostname
+						foundHosts[i].Hostname = hn
 					}
 					hosts = append(hosts, foundHosts...)
 				} else {
-					h := core.NewHostInfo(df.IP, "dns_resolved")
-					h.Hostname = df.Hostname
+					h := core.NewHostInfo(ip, "dns_resolved")
+					h.Hostname = hn
 					hosts = append(hosts, h)
 				}
 			}
@@ -219,7 +226,13 @@ Entegrasyon Modları:
 		} else {
 			// Varsayılan: Native Go Worker Pool Port Scanner
 			parsedPorts := modules.ParsePortSpecs(portsFlag)
-			openPorts, _ = modules.ScanMultipleHosts(targetIPs, parsedPorts, threadsFlag, 2500*time.Millisecond, fmt.Sprintf("%s/ports.json", outputDirFlag))
+			scanConcurrency := threadsFlag
+			if len(targetIPs) > 1 && scanConcurrency > 25 {
+				scanConcurrency = 20
+			} else if scanConcurrency > 35 {
+				scanConcurrency = 25
+			}
+			openPorts, _ = modules.ScanMultipleHosts(targetIPs, parsedPorts, scanConcurrency, 2500*time.Millisecond, fmt.Sprintf("%s/ports.json", outputDirFlag))
 		}
 
 		if len(openPorts) == 0 {

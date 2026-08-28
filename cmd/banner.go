@@ -20,7 +20,6 @@ var bannerCmd = &cobra.Command{
 	Example: `  specter-recon banner --authorized
   specter-recon banner -i output/ports.json -o output/services.json --authorized`,
 	Run: func(cmd *cobra.Command, args []string) {
-		core.PrintBanner(version)
 		core.EnsureOutputDir("output")
 		var ports []core.PortInfo
 		var err error
