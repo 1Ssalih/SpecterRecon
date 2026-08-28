@@ -468,6 +468,20 @@ type BaselineResponse struct {
 	Title            string
 }
 
+func normalizeRedirectLocation(loc string) string {
+	if loc == "" {
+		return ""
+	}
+	u, err := url.Parse(loc)
+	if err == nil && u.Path != "" {
+		return u.Path
+	}
+	if idx := strings.Index(loc, "?"); idx != -1 {
+		return loc[:idx]
+	}
+	return loc
+}
+
 // DetectBaselineResponse probes 3 random non-existent paths to detect Wildcard / Catch-All redirection or soft 404 behavior.
 func DetectBaselineResponse(client *http.Client, baseURL string, targetHost string) BaselineResponse {
 	testPaths := []string{
@@ -527,6 +541,8 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 	if len(results) >= 2 {
 		first := results[0]
 		allMatch := true
+		firstBaseLoc := normalizeRedirectLocation(first.location)
+
 		for _, r := range results[1:] {
 			if r.statusCode != first.statusCode {
 				allMatch = false
@@ -536,14 +552,21 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 			if diff < 0 {
 				diff = -diff
 			}
-			if diff > 15 && r.location != first.location {
+			rBaseLoc := normalizeRedirectLocation(r.location)
+			// Tolerant size diff (45B) or matching redirect base path
+			if diff > 45 && (firstBaseLoc == "" || firstBaseLoc != rBaseLoc) {
 				allMatch = false
 				break
 			}
 		}
 
-		if allMatch && (first.statusCode == 200 || first.statusCode == 301 || first.statusCode == 302 || first.statusCode == 307 || first.statusCode == 308 || first.statusCode == 403 || first.statusCode == 400) {
-			core.LogWarning("Catch-All / Wildcard Yanıtı Tespit Edildi: Hedef bilinmeyen tüm yollara [%d] (~%dB) dönüyor. Sahte bulgular otomatik filtrelenecektir.", first.statusCode, first.length)
+		if allMatch && first.statusCode != 404 && first.statusCode != 405 {
+			destHint := ""
+			if firstBaseLoc != "" {
+				destHint = fmt.Sprintf(" ➔ %s", firstBaseLoc)
+			}
+			core.LogWarning("Catch-All / Wildcard Yanıtı Tespit Edildi: Hedef bilinmeyen tüm yollara [%d] (~%dB%s) dönüyor. Sahte bulgular otomatik filtrelenecektir.",
+				first.statusCode, first.length, destHint)
 			return BaselineResponse{
 				IsCatchAll:       true,
 				StatusCode:       first.statusCode,
@@ -697,17 +720,30 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 			if diff < 0 {
 				diff = -diff
 			}
-			// Suppress matching content size
-			if diff <= 15 {
-				if !(isSensitive && resp.StatusCode == 200 && title != baseline.Title && title != "") {
+			baseLoc := normalizeRedirectLocation(location)
+			baseBaselineLoc := normalizeRedirectLocation(baseline.RedirectLocation)
+
+			// Suppress if size is within tolerance (45B) OR if redirect base path matches baseline redirect base path
+			isRedirectMatch := (resp.StatusCode == 301 || resp.StatusCode == 302 || resp.StatusCode == 303 || resp.StatusCode == 307 || resp.StatusCode == 308) &&
+				baseBaselineLoc != "" && (baseLoc == baseBaselineLoc || strings.TrimRight(baseLoc, "/") == strings.TrimRight(baseBaselineLoc, "/"))
+
+			if diff <= 45 || isRedirectMatch {
+				// Only allow 200 OK responses through if they contain unique content or secret leaks
+				if !(resp.StatusCode == 200 && (len(leaks) > 0 || (title != baseline.Title && title != ""))) {
 					return nil
 				}
 			}
-			// Suppress matching redirect location
-			if (resp.StatusCode == 301 || resp.StatusCode == 302 || resp.StatusCode == 307 || resp.StatusCode == 308) && baseline.RedirectLocation != "" {
-				if location == baseline.RedirectLocation || strings.TrimRight(location, "/") == strings.TrimRight(baseline.RedirectLocation, "/") {
-					return nil
-				}
+		}
+
+		// Sensitive classification logic:
+		// A path is only considered truly sensitive if it returns 200 OK (with content), OR
+		// returns 401/403 on a target that does NOT return 401/403 as the global baseline.
+		// Redirects (301/302) are NEVER marked as sensitive!
+		if isSensitive {
+			if resp.StatusCode == 301 || resp.StatusCode == 302 || resp.StatusCode == 303 || resp.StatusCode == 307 || resp.StatusCode == 308 {
+				isSensitive = false
+			} else if (resp.StatusCode == 401 || resp.StatusCode == 403) && baseline.IsCatchAll && baseline.StatusCode == resp.StatusCode {
+				isSensitive = false
 			}
 		}
 
@@ -769,7 +805,7 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 	}
 
 	statusFilter := map[int]bool{
-		200: true, 204: true, 301: true, 302: true, 307: true, 308: true, 401: true, 403: true, 405: true, 500: true,
+		200: true, 204: true, 301: true, 302: true, 303: true, 307: true, 308: true, 401: true, 403: true, 405: true, 500: true,
 	}
 
 	sniHost := targetHost
@@ -844,15 +880,17 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 
 				if res != nil {
 					// Dynamic soft-404 / wildcard clustering filter:
-					// If the exact same (statusCode:size) is observed > 15 times for non-200 responses, suppress further duplicates
-					freqKey := fmt.Sprintf("%d:%d", res.StatusCode, res.ContentLength)
+					// Bucketize response size into 35-byte intervals
+					sizeBucket := (res.ContentLength / 35) * 35
+					freqKey := fmt.Sprintf("%d:%d", res.StatusCode, sizeBucket)
 					mu.Lock()
 					sizeFrequencyMap[freqKey]++
 					count := sizeFrequencyMap[freqKey]
 					mu.Unlock()
 
-					if res.StatusCode != 200 && count > 15 && !res.IsSensitive {
-						continue // Suppress repetitive wildcard flood
+					// If any non-200 status (e.g. 302, 401, 403, 500) repeats more than 6 times with similar size:
+					if res.StatusCode != 200 && count > 6 {
+						continue // Suppress repetitive wildcard / catch-all flood
 					}
 
 					mu.Lock()
@@ -860,12 +898,10 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 					mu.Unlock()
 
 					tag := ""
-					if res.IsSensitive {
-						if res.StatusCode == 401 || res.StatusCode == 403 {
-							tag = " [KRİTİK DOSYA - ERİŞİM ENGELLENDİ]"
-						} else {
-							tag = " [KRİTİK DOSYA]"
-						}
+					if res.IsSensitive && res.StatusCode == 200 {
+						tag = " [KRİTİK DOSYA]"
+					} else if res.IsSensitive && (res.StatusCode == 401 || res.StatusCode == 403) {
+						tag = " [KRİTİK DOSYA - ERİŞİM ENGELLENDİ]"
 					}
 					core.LogSuccess("Dizin Bulundu: [%d] %s (Boyut: %dB)%s", res.StatusCode, res.URL, res.ContentLength, tag)
 				}

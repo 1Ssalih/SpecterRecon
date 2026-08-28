@@ -318,16 +318,41 @@ Entegrasyon Modları:
 		var sshFindings []core.SshAuditFinding
 
 		if extendedFlag {
-			core.LogStep("Genişletilmiş Modül: SSL/TLS Sertifika & Protokol Denetimi")
-			sslFindings, _ = modules.AuditSSLMultiple(services, 4*time.Second, fmt.Sprintf("%s/ssl_findings.json", outputDirFlag))
-			core.PrintSslTable(sslFindings)
+			var hasSSL, hasHTTP, hasSSH bool
+			for _, s := range services {
+				if s.SSLEnabled || s.Port == 443 || s.Port == 8443 || s.Port == 4443 || s.Port == 9443 {
+					hasSSL = true
+				}
+				if s.ServiceName == "http" || s.ServiceName == "https" || s.Port == 80 || s.Port == 443 || s.Port == 8080 || s.Port == 8443 || s.Port == 3000 || s.Port == 5000 || s.Port == 8000 || s.Port == 8888 || s.Port == 9000 {
+					hasHTTP = true
+				}
+				if s.ServiceName == "ssh" || s.Port == 22 || s.Port == 2222 {
+					hasSSH = true
+				}
+			}
 
-			core.LogStep("Genişletilmiş Modül: HTTP Güvenlik Denetimi (Headers, CORS, Methods)")
-			httpAuditFindings, _ = modules.AuditHTTPMultiple(services, 5*time.Second, fmt.Sprintf("%s/http_audit.json", outputDirFlag))
-			core.PrintHttpAuditTable(httpAuditFindings)
+			if hasSSL {
+				core.LogStep("Genişletilmiş Modül: SSL/TLS Sertifika & Protokol Denetimi")
+				sslFindings, _ = modules.AuditSSLMultiple(services, 4*time.Second, fmt.Sprintf("%s/ssl_findings.json", outputDirFlag))
+				core.PrintSslTable(sslFindings)
+			} else {
+				core.LogInfo("Açık SSL/TLS servisi tespit edilmedi, SSL denetim adımı atlandı.")
+			}
 
-			core.LogStep("Genişletilmiş Modül: SSH Algoritma & Konfigürasyon Denetimi")
-			sshFindings, _ = modules.AuditSSHMultiple(services, 4*time.Second, fmt.Sprintf("%s/ssh_audit.json", outputDirFlag))
+			if hasHTTP {
+				core.LogStep("Genişletilmiş Modül: HTTP Güvenlik Denetimi (Headers, CORS, Methods)")
+				httpAuditFindings, _ = modules.AuditHTTPMultiple(services, 5*time.Second, fmt.Sprintf("%s/http_audit.json", outputDirFlag))
+				core.PrintHttpAuditTable(httpAuditFindings)
+			} else {
+				core.LogInfo("Açık HTTP servisi tespit edilmedi, HTTP denetim adımı atlandı.")
+			}
+
+			if hasSSH {
+				core.LogStep("Genişletilmiş Modül: SSH Algoritma & Konfigürasyon Denetimi")
+				sshFindings, _ = modules.AuditSSHMultiple(services, 4*time.Second, fmt.Sprintf("%s/ssh_audit.json", outputDirFlag))
+			} else {
+				core.LogInfo("Açık SSH servisi tespit edilmedi, SSH denetim adımı atlandı.")
+			}
 		}
 
 		// Step 4: Web Directory Fuzzing

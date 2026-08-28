@@ -156,7 +156,7 @@ func ScanTargetPorts(ip string, ports []int, concurrency int, timeout time.Durat
 		concurrency = 30
 	}
 	if timeout <= 0 {
-		timeout = 2500 * time.Millisecond
+		timeout = 1200 * time.Millisecond
 	}
 
 	portChan := make(chan int, len(ports))
@@ -218,7 +218,7 @@ func ScanTargetPorts(ip string, ports []int, concurrency int, timeout time.Durat
 				defer retryWg.Done()
 				retrySem <- struct{}{}
 				defer func() { <-retrySem }()
-				if res := ScanSinglePort(ip, p, 3500*time.Millisecond); res != nil {
+				if res := ScanSinglePort(ip, p, 1500*time.Millisecond); res != nil {
 					mu.Lock()
 					openPorts = append(openPorts, *res)
 					mu.Unlock()
@@ -235,9 +235,10 @@ func ScanTargetPorts(ip string, ports []int, concurrency int, timeout time.Durat
 
 	if outputFile != "" {
 		_ = core.SavePorts(openPorts, outputFile)
+		core.LogInfo("Port Taraması tamamlandı: %d açık port tespit edildi (%s).", len(openPorts), outputFile)
+	} else {
+		core.LogInfo("Port Taraması tamamlandı: %d açık port tespit edildi.", len(openPorts))
 	}
-
-	core.LogInfo("Port Taraması tamamlandı: %d açık port tespit edildi (%s).", len(openPorts), outputFile)
 	core.LogAudit("PORT_SCAN_COMPLETE", ip, fmt.Sprintf("open_ports=%d", len(openPorts)), "SUCCESS")
 
 	return openPorts, nil
@@ -248,16 +249,16 @@ func ScanMultipleHosts(ips []string, ports []int, concurrency int, timeout time.
 	var allPorts []core.PortInfo
 	for _, ip := range ips {
 		found, err := ScanTargetPorts(ip, ports, concurrency, timeout, "")
-		if err == nil && len(found) > 0 {
+		if err == nil {
 			allPorts = append(allPorts, found...)
 		} else {
-			// Quick fallback with gentle pacing in case of transient gateway queueing
+			// Quick fallback with gentle pacing in case of transient socket exhaustion
 			time.Sleep(100 * time.Millisecond)
 			retryConcurrency := concurrency
 			if retryConcurrency > 15 {
 				retryConcurrency = 15
 			}
-			retryFound, _ := ScanTargetPorts(ip, ports, retryConcurrency, timeout+500*time.Millisecond, "")
+			retryFound, _ := ScanTargetPorts(ip, ports, retryConcurrency, timeout+300*time.Millisecond, "")
 			allPorts = append(allPorts, retryFound...)
 		}
 	}

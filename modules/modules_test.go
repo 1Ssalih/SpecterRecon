@@ -1130,3 +1130,57 @@ func TestSubdomainTakeoverFingerprints(t *testing.T) {
 		t.Errorf("Geçersiz takeover tespiti: %s", serviceNone)
 	}
 }
+
+func TestCatchAll302DynamicQueryAnd401Detection(t *testing.T) {
+	// 1. Test 302 Redirect Catch-All server with dynamic ReturnUrl
+	server302 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dest := fmt.Sprintf("/Login.aspx?ReturnUrl=%s", url.QueryEscape(r.URL.Path))
+		w.Header().Set("Location", dest)
+		w.WriteHeader(http.StatusFound)
+		_, _ = w.Write([]byte("<html><body>Object moved</body></html>"))
+	}))
+	defer server302.Close()
+
+	client := &http.Client{
+		Transport: server302.Client().Transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	baseline302 := DetectBaselineResponse(client, server302.URL, "")
+	if !baseline302.IsCatchAll || baseline302.StatusCode != 302 {
+		t.Errorf("302 Dynamic Catch-All tespit edilemedi: %+v", baseline302)
+	}
+
+	// Fuzzing a sensitive file like cmd.aspx on 302 catch-all server must be suppressed
+	statusFilter := map[int]bool{200: true, 301: true, 302: true, 401: true, 403: true}
+	resSensitive := FuzzSingleURL(client, server302.URL, "cmd.aspx", "test", statusFilter, nil, baseline302, "", nil)
+	if resSensitive != nil {
+		t.Errorf("302 Catch-All üzerindeki cmd.aspx sahte bulgu olarak basılmamalıydı: %+v", resSensitive)
+	}
+
+	// 2. Test 401 Unauthorized Catch-All server
+	server401 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("Access Denied"))
+	}))
+	defer server401.Close()
+
+	client401 := &http.Client{
+		Transport: server401.Client().Transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	baseline401 := DetectBaselineResponse(client401, server401.URL, "")
+	if !baseline401.IsCatchAll || baseline401.StatusCode != 401 {
+		t.Errorf("401 Catch-All tespit edilemedi: %+v", baseline401)
+	}
+
+	res401 := FuzzSingleURL(client401, server401.URL, "admin", "test", statusFilter, nil, baseline401, "", nil)
+	if res401 != nil {
+		t.Errorf("401 Catch-All üzerindeki admin yolu filtrelenmeliydi: %+v", res401)
+	}
+}

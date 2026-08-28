@@ -176,7 +176,8 @@ func SystemICMPPing(ip string, timeout time.Duration) *float64 {
 }
 
 // AsyncTCPPing tests if a host is alive by connecting to a common port.
-func AsyncTCPPing(ip string, port int, timeout time.Duration) *float64 {
+// Returns latency and whether the port was actually open (true) or actively refused via RST (false).
+func AsyncTCPPing(ip string, port int, timeout time.Duration) (*float64, bool) {
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", addr, timeout)
@@ -184,13 +185,13 @@ func AsyncTCPPing(ip string, port int, timeout time.Duration) *float64 {
 		// If connection was refused actively (RST), host is definitely alive!
 		if strings.Contains(err.Error(), "refused") {
 			lat := float64(time.Since(start).Nanoseconds()) / 1e6
-			return &lat
+			return &lat, false
 		}
-		return nil
+		return nil, false
 	}
 	_ = conn.Close()
 	lat := float64(time.Since(start).Nanoseconds()) / 1e6
-	return &lat
+	return &lat, true
 }
 
 // ProbeSingleHost probes a host via ICMP and common TCP ports.
@@ -207,10 +208,14 @@ func ProbeSingleHost(ip string, commonPorts []int, timeout time.Duration, arpMap
 
 	// 2. TCP Ping check across common ports
 	for _, port := range commonPorts {
-		tcpLat := AsyncTCPPing(ip, port, 800*time.Millisecond)
+		tcpLat, isOpen := AsyncTCPPing(ip, port, 1000*time.Millisecond)
 		if tcpLat != nil {
 			mac := arpMap[ip]
-			host := core.NewHostInfo(ip, fmt.Sprintf("tcp_ping:%d", port))
+			method := fmt.Sprintf("tcp_open:%d", port)
+			if !isOpen {
+				method = fmt.Sprintf("tcp_rst:%d", port)
+			}
+			host := core.NewHostInfo(ip, method)
 			host.MAC = mac
 			host.LatencyMs = tcpLat
 			return &host
@@ -250,7 +255,6 @@ func DiscoverHosts(target string, commonPorts []int, timeout time.Duration, conc
 		wg             sync.WaitGroup
 		mu             sync.Mutex
 		discoveredHost []core.HostInfo
-		seenIPs        = make(map[string]bool)
 	)
 
 	for i := 0; i < concurrency; i++ {
@@ -258,19 +262,16 @@ func DiscoverHosts(target string, commonPorts []int, timeout time.Duration, conc
 		go func() {
 			defer wg.Done()
 			for ip := range ipChan {
-				res := ProbeSingleHost(ip, commonPorts, timeout, arpMap)
-				if res != nil {
+				h := ProbeSingleHost(ip, commonPorts, timeout, arpMap)
+				if h != nil {
 					mu.Lock()
-					if !seenIPs[res.IP] {
-						seenIPs[res.IP] = true
-						discoveredHost = append(discoveredHost, *res)
-						latStr := "-"
-						if res.LatencyMs != nil {
-							latStr = fmt.Sprintf("%.2fms", *res.LatencyMs)
-						}
-						core.LogSuccess("Host bulundu (%s): %s (Latency: %s)", res.DiscoveryMethod, res.IP, latStr)
-					}
+					discoveredHost = append(discoveredHost, *h)
 					mu.Unlock()
+					latStr := "N/A"
+					if h.LatencyMs != nil {
+						latStr = fmt.Sprintf("%.2fms", *h.LatencyMs)
+					}
+					core.LogSuccess("Canlı Host Bulundu: %s ➔ %s (%s, %s)", h.IP, h.State, h.DiscoveryMethod, latStr)
 				}
 			}
 		}()
@@ -289,9 +290,10 @@ func DiscoverHosts(target string, commonPorts []int, timeout time.Duration, conc
 
 	if outputFile != "" {
 		_ = core.SaveHosts(discoveredHost, outputFile)
+		core.LogInfo("Host Discovery tamamlandı: %d canlı host kaydedildi (%s).", len(discoveredHost), outputFile)
+	} else {
+		core.LogInfo("Host Discovery tamamlandı: %d canlı host tespit edildi.", len(discoveredHost))
 	}
-
-	core.LogInfo("Host Discovery tamamlandı: %d canlı host kaydedildi (%s).", len(discoveredHost), outputFile)
 	core.LogAudit("HOST_DISCOVERY_COMPLETE", target, fmt.Sprintf("found_hosts=%d", len(discoveredHost)), "SUCCESS")
 
 	return discoveredHost, nil
