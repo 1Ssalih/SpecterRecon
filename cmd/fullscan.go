@@ -5,8 +5,9 @@ import (
 )
 
 var fullscanCmd = &cobra.Command{
-	Use:   "fullscan [target]",
-	Short: "Tüm recon adımlarını ve genişletilmiş modülleri dahil tam tarama modunda çalıştırır (scan --extended kısayolu)",
+	Use:          "fullscan [target]",
+	Short:        "Tüm recon adımlarını ve genişletilmiş modülleri dahil tam tarama modunda çalıştırır (scan --extended kısayolu)",
+	SilenceUsage: true,
 	Example: `  # Tam kapsamlı recon taraması
   specter-recon fullscan scanme.nmap.org --authorized
 

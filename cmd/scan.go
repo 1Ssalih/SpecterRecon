@@ -27,8 +27,9 @@ var (
 )
 
 var scanCmd = &cobra.Command{
-	Use:   "scan [target]",
-	Short: "Hedef üzerinde DNS + Discovery + Port + Banner + DirFuzz recon pipeline'ı çalıştırır",
+	Use:          "scan [target]",
+	Short:        "Hedef üzerinde DNS + Discovery + Port + Banner + DirFuzz recon pipeline'ı çalıştırır",
+	SilenceUsage: true,
 	Long: `Hedef üzerinde otomatik keşif (recon) pipeline'ı çalıştırır.
 
 Tarama Profilleri (--profile):

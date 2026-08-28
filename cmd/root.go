@@ -19,8 +19,9 @@ var (
 
 // RootCmd is the base command for SpecterRecon.
 var RootCmd = &cobra.Command{
-	Use:   "specter-recon",
-	Short: "⚡ SpecterRecon — Yüksek Performanslı Modüler Ağ Keşif Motoru",
+	Use:          "specter-recon",
+	Short:        "⚡ SpecterRecon — Yüksek Performanslı Modüler Ağ Keşif Motoru",
+	SilenceUsage: true,
 	Long: `
   ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
   ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
@@ -42,6 +43,10 @@ Parametresiz çalıştırdığınızda interaktif konsol (Metasploit tarzı) mod
 }
 
 func Execute() {
+	RootCmd.SilenceUsage = true
+	for _, c := range RootCmd.Commands() {
+		c.SilenceUsage = true
+	}
 	if err := RootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)

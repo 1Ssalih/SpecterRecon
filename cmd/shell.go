@@ -167,6 +167,10 @@ func processCommand(rootCmd *cobra.Command, input string) {
 	// Execute root command with parsed args
 	startTime := time.Now()
 	rootCmd.SetArgs(cmdArgs)
+	rootCmd.SilenceUsage = true
+	for _, c := range rootCmd.Commands() {
+		c.SilenceUsage = true
+	}
 	_ = rootCmd.Execute()
 
 	// Print subtle elapsed time if it was a real command
