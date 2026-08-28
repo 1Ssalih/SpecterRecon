@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"time"
 
 	"github.com/specter-recon/recon-tool/core"
@@ -21,9 +22,32 @@ var bannerCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		core.PrintBanner(version)
 		core.EnsureOutputDir("output")
-		ports, err := core.LoadPorts(bannerInputFlag)
-		if err != nil || len(ports) == 0 {
-			core.LogError("Port listesi okunamadı veya boş: %s", bannerInputFlag)
+		var ports []core.PortInfo
+		var err error
+
+		if strings.HasSuffix(strings.ToLower(bannerInputFlag), ".xml") {
+			_, impPorts, _, _, xmlErr := modules.LoadNmapXMLFile(bannerInputFlag)
+			if xmlErr == nil && len(impPorts) > 0 {
+				ports = impPorts
+				core.LogSuccess("Nmap XML dosyasından %d açık port yüklendi.", len(ports))
+			} else {
+				err = xmlErr
+			}
+		} else {
+			ports, err = core.LoadPorts(bannerInputFlag)
+			if err != nil || len(ports) == 0 {
+				// Try Masscan JSON parser
+				_, mPorts, mErr := modules.LoadMasscanJSONFile(bannerInputFlag)
+				if mErr == nil && len(mPorts) > 0 {
+					ports, _ = modules.VerifyPortsWithHandshake(mPorts, 50, 1500*time.Millisecond)
+					core.LogSuccess("Masscan JSON dosyasından %d açık port yüklendi ve teyit edildi.", len(ports))
+					err = nil
+				}
+			}
+		}
+
+		if len(ports) == 0 {
+			core.LogError("Port listesi okunamadı veya boş: %s (%v)", bannerInputFlag, err)
 			return
 		}
 		// Banner grabbing yetkili tarama gerektiriyor

@@ -57,6 +57,34 @@ dirfuzz:
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 SpecterRecon/1.0"
   extensions: [".php", ".html", ".js", ".json", ".txt", ".bak", ".env", ".zip"]
 
+# Nmap Scripting Engine (NSE) Automatic Script Mappings
+nse_mappings:
+  "445":
+    - smb-vuln-ms17-010
+    - smb-os-discovery
+  "443":
+    - ssl-heartbleed
+    - ssl-cert
+    - ssl-enum-ciphers
+  "80":
+    - http-vuln-cve2021-41773
+    - http-methods
+    - http-title
+  "21":
+    - ftp-anon
+  "22":
+    - ssh-auth-methods
+    - ssh2-enum-algos
+  "3389":
+    - rdp-enum-encryption
+  "http":
+    - http-vuln-cve2021-41773
+    - http-methods
+  "smb":
+    - smb-vuln-ms17-010
+  "ssl":
+    - ssl-heartbleed
+
 # Output Directory
 output:
   dir: "output"

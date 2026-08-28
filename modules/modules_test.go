@@ -746,3 +746,181 @@ func TestWAFDetectionAkamaiGHost(t *testing.T) {
 		t.Errorf("WAF Title hatalı, alinan: %s", res.Title)
 	}
 }
+
+func TestNmapXMLImport(t *testing.T) {
+	mockXML := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" args="nmap -sV -p 80,445 -oX - 192.168.1.100" start="1610000000" version="7.92">
+  <host>
+    <status state="up" reason="syn-ack"/>
+    <address addr="192.168.1.100" addrtype="ipv4"/>
+    <hostnames>
+      <hostname name="server.corp.local" type="user"/>
+    </hostnames>
+    <ports>
+      <port protocol="tcp" portid="80">
+        <state state="open" reason="syn-ack"/>
+        <service name="http" product="Apache httpd" version="2.4.49" extrainfo="Ubuntu" conf="10"/>
+        <script id="http-title" output="Internal Corporate Portal"/>
+      </port>
+      <port protocol="tcp" portid="445">
+        <state state="open" reason="syn-ack"/>
+        <service name="microsoft-ds" product="Windows Server 2008" version="" conf="10"/>
+        <script id="smb-vuln-ms17-010" output="State: VULNERABLE&#xa;Risk: Remote Code Execution (EternalBlue)"/>
+      </port>
+    </ports>
+  </host>
+</nmaprun>`
+
+	hosts, ports, services, nseFindings, err := ParseNmapXML([]byte(mockXML))
+	if err != nil {
+		t.Fatalf("ParseNmapXML hatası: %v", err)
+	}
+
+	if len(hosts) != 1 || hosts[0].IP != "192.168.1.100" || hosts[0].Hostname != "server.corp.local" {
+		t.Errorf("Host parse hatası: %+v", hosts)
+	}
+
+	if len(ports) != 2 {
+		t.Fatalf("2 açık port bekleniyordu, bulunan: %d", len(ports))
+	}
+	if ports[0].Source != "nmap" || !ports[0].Verified {
+		t.Errorf("Port 0 metadata hatası: %+v", ports[0])
+	}
+
+	if len(services) != 2 {
+		t.Fatalf("2 servis detayı bekleniyordu, bulunan: %d", len(services))
+	}
+	if !strings.Contains(services[0].ServiceDescription, "Apache") {
+		t.Errorf("Servis 0 Apache bekleniyordu: %+v", services[0])
+	}
+
+	if len(nseFindings) != 2 {
+		t.Fatalf("2 NSE bulgusu bekleniyordu, bulunan: %d", len(nseFindings))
+	}
+	var ms17Finding *core.NSEFinding
+	for _, nf := range nseFindings {
+		if nf.Script == "smb-vuln-ms17-010" {
+			ms17Finding = &nf
+			break
+		}
+	}
+	if ms17Finding == nil {
+		t.Fatalf("smb-vuln-ms17-010 NSE scripti bulunamadı!")
+	}
+	if ms17Finding.Severity != "CRITICAL" || ms17Finding.State != "VULNERABLE" {
+		t.Errorf("NSE zafiyet derecelendirme hatası: %+v", ms17Finding)
+	}
+}
+
+func TestMasscanJSONImport(t *testing.T) {
+	// 1. JSON Array format
+	mockJSON := `[
+  { "ip": "10.0.0.50", "timestamp": "1610000000", "ports": [ {"port": 80, "proto": "tcp", "status": "open", "reason": "syn-ack", "ttl": 64} ] },
+  { "ip": "10.0.0.50", "timestamp": "1610000000", "ports": [ {"port": 443, "proto": "tcp", "status": "open", "reason": "syn-ack", "ttl": 64} ] },
+  { "ip": "10.0.0.51", "timestamp": "1610000000", "ports": [ {"port": 22, "proto": "tcp", "status": "open", "reason": "syn-ack", "ttl": 64} ] }
+]`
+
+	hosts, ports, err := ParseMasscanJSON([]byte(mockJSON))
+	if err != nil {
+		t.Fatalf("ParseMasscanJSON (Array) hatası: %v", err)
+	}
+	if len(hosts) != 2 {
+		t.Errorf("2 host bekleniyordu, alinan: %d", len(hosts))
+	}
+	if len(ports) != 3 {
+		t.Errorf("3 port bekleniyordu, alinan: %d", len(ports))
+	}
+	if ports[0].Source != "masscan" || ports[0].Verified {
+		t.Errorf("Masscan portu Source=masscan ve Verified=false olmalı: %+v", ports[0])
+	}
+
+	// 2. Text / Line format
+	mockText := `
+open tcp 80 192.168.1.1 1610000000
+open tcp 443 192.168.1.1 1610000000
+Discovered open port 22/tcp on 192.168.1.2
+`
+	hosts2, ports2, err2 := ParseMasscanJSON([]byte(mockText))
+	if err2 != nil {
+		t.Fatalf("ParseMasscanJSON (Text) hatası: %v", err2)
+	}
+	if len(hosts2) != 2 || len(ports2) != 3 {
+		t.Errorf("Text formatı parse hatası: hosts=%d, ports=%d", len(hosts2), len(ports2))
+	}
+}
+
+func TestPortVerifyHandshake(t *testing.T) {
+	// Start a mock TCP listener for port verification
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Mock TCP listener baslatilamadi: %v", err)
+	}
+	defer ln.Close()
+
+	_, portStr, _ := net.SplitHostPort(ln.Addr().String())
+	openPortNum, _ := strconv.Atoi(portStr)
+
+	testPorts := []core.PortInfo{
+		{
+			IP:       "127.0.0.1",
+			Port:     openPortNum,
+			Protocol: "tcp",
+			Source:   "masscan",
+			Verified: false,
+		},
+		{
+			IP:       "127.0.0.1",
+			Port:     59998, // Closed/unreachable port
+			Protocol: "tcp",
+			Source:   "masscan",
+			Verified: false,
+		},
+	}
+
+	verified, conflicts := VerifyPortsWithHandshake(testPorts, 5, 400*time.Millisecond)
+
+	if len(verified) != 2 {
+		t.Fatalf("Toplam 2 port dönmeliydi, alinan: %d", len(verified))
+	}
+
+	// Find the open port and closed port
+	var openP, closedP *core.PortInfo
+	for i := range verified {
+		if verified[i].Port == openPortNum {
+			openP = &verified[i]
+		} else if verified[i].Port == 59998 {
+			closedP = &verified[i]
+		}
+	}
+
+	if openP == nil || !openP.Verified || openP.Conflict {
+		t.Errorf("Açık port teyit edilemedi: %+v", openP)
+	}
+
+	if closedP == nil || closedP.Verified || !closedP.Conflict {
+		t.Errorf("Kapalı port çelişki olarak işaretlenmedi: %+v", closedP)
+	}
+
+	if len(conflicts) != 1 || conflicts[0].Port != 59998 {
+		t.Errorf("Çelişki listesi hatalı: %+v", conflicts)
+	}
+}
+
+func TestNSEMappings(t *testing.T) {
+	mappings := LoadNSEMappings("non-existent-config.yaml")
+	if len(mappings) == 0 {
+		t.Fatalf("Default NSE mappings bos döndü")
+	}
+
+	scripts445 := GetNSEScriptsForPortAndService(445, "microsoft-ds", mappings)
+	if len(scripts445) == 0 || !strings.Contains(strings.Join(scripts445, ","), "ms17-010") {
+		t.Errorf("Port 445 icin ms17-010 bekleniyordu: %+v", scripts445)
+	}
+
+	scriptsHTTP := GetNSEScriptsForPortAndService(8080, "http-proxy", mappings)
+	if len(scriptsHTTP) == 0 || !strings.Contains(strings.Join(scriptsHTTP, ","), "http-vuln") {
+		t.Errorf("HTTP servisi icin http zafiyet scriptleri bekleniyordu: %+v", scriptsHTTP)
+	}
+}
+

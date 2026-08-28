@@ -31,6 +31,19 @@ type PortInfo struct {
 	State          string   `json:"state"`
 	ServiceName    string   `json:"service_name,omitempty"`
 	ResponseTimeMs *float64 `json:"response_time_ms,omitempty"`
+	Source         string   `json:"source,omitempty"`   // "native" | "masscan" | "nmap"
+	Verified       bool     `json:"verified,omitempty"` // true if verified via native handshake
+	Conflict       bool     `json:"conflict,omitempty"` // true if masscan reported open but native handshake failed
+}
+
+// NSEFinding represents an Nmap Scripting Engine (NSE) vulnerability or audit result.
+type NSEFinding struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Script   string `json:"script"`
+	Output   string `json:"output"`
+	Severity string `json:"severity"` // CRITICAL, HIGH, MEDIUM, LOW, INFO
+	State    string `json:"state"`    // VULNERABLE, LIKELY_VULNERABLE, SAFE, INFO
 }
 
 // VersionEvidence represents an evidence item used for service version determination.
@@ -155,29 +168,34 @@ type SshAuditFinding struct {
 
 // HostScanReport aggregates all findings for a single host.
 type HostScanReport struct {
-	Host        HostInfo         `json:"host"`
-	Ports       []PortInfo       `json:"ports"`
-	Services    []ServiceDetail  `json:"services"`
-	DirFindings []DirFuzzFinding `json:"dir_findings"`
+	Host             HostInfo         `json:"host"`
+	Ports            []PortInfo       `json:"ports"`
+	Services         []ServiceDetail  `json:"services"`
+	DirFindings      []DirFuzzFinding `json:"dir_findings"`
+	NSEFindings      []NSEFinding     `json:"nse_findings,omitempty"`
+	ConflictingPorts []PortInfo       `json:"conflicting_ports,omitempty"`
 }
 
 // CompleteScanReport represents the entire consolidated scan output.
 type CompleteScanReport struct {
-	ScanID          string           `json:"scan_id"`
-	Target          string           `json:"target"`
-	ScanDate        string           `json:"scan_date"`
-	ScanProfile     string           `json:"scan_profile,omitempty"` // basic, extended
-	DurationSeconds float64          `json:"duration_seconds"`
-	DNSFindings     []DNSFinding     `json:"dns_findings,omitempty"`
-	TotalDNSRecords int              `json:"total_dns_records"`
-	Hosts           []HostScanReport `json:"hosts"`
-	TotalHosts      int              `json:"total_hosts"`
-	TotalOpenPorts  int              `json:"total_open_ports"`
-	TotalFindings   int              `json:"total_findings"`
+	ScanID            string             `json:"scan_id"`
+	Target            string             `json:"target"`
+	ScanDate          string             `json:"scan_date"`
+	ScanProfile       string             `json:"scan_profile,omitempty"` // aggressive, balanced, stealth, basic, extended
+	DurationSeconds   float64            `json:"duration_seconds"`
+	DNSFindings       []DNSFinding       `json:"dns_findings,omitempty"`
+	TotalDNSRecords   int                `json:"total_dns_records"`
+	Hosts             []HostScanReport   `json:"hosts"`
+	TotalHosts        int                `json:"total_hosts"`
+	TotalOpenPorts    int                `json:"total_open_ports"`
+	TotalFindings     int                `json:"total_findings"`
 	// Pasif genişletilmiş modül bulguları
 	SslFindings       []SslFinding       `json:"ssl_findings,omitempty"`
 	HttpAuditFindings []HttpAuditFinding `json:"http_audit_findings,omitempty"`
 	SshAuditFindings  []SshAuditFinding  `json:"ssh_audit_findings,omitempty"`
+	// Nmap & Masscan Entegrasyon Bulguları
+	NSEFindings       []NSEFinding       `json:"nse_findings,omitempty"`
+	ConflictingPorts  []PortInfo         `json:"conflicting_ports,omitempty"`
 }
 
 // NewHostInfo creates a new HostInfo with current UTC timestamp.

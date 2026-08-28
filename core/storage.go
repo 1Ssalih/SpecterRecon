@@ -339,6 +339,14 @@ func SaveSummaryTxt(
 				}
 				w("")
 			}
+		case []NSEFinding:
+			if len(v) > 0 {
+				w("[NMAP NSE ZAFİYET BULGULARI] (%d)", len(v))
+				for _, nse := range v {
+					w("  !! %s:%d — [%s] [%s] %s", nse.Host, nse.Port, nse.Severity, nse.Script, nse.State)
+				}
+				w("")
+			}
 		}
 	}
 

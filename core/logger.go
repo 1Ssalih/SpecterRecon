@@ -175,7 +175,7 @@ func PrintPortsTable(ports []PortInfo) {
 		return
 	}
 	tableData := pterm.TableData{
-		{"IP Adresi", "Port/Protokol", "Servis", "Durum", "Yanıt Süresi"},
+		{"IP Adresi", "Port/Protokol", "Servis", "Kaynak / Doğrulama", "Durum", "Yanıt Süresi"},
 	}
 	for _, p := range ports {
 		resp := "-"
@@ -186,10 +186,21 @@ func PrintPortsTable(ports []PortInfo) {
 		if service == "" {
 			service = "unknown"
 		}
+
+		sourceTag := "NATIVE"
+		if p.Conflict {
+			sourceTag = "⚠️ MASSCAN (Çelişkili)"
+		} else if p.Source == "masscan" {
+			sourceTag = "✓ MASSCAN (Teyitli)"
+		} else if p.Source == "nmap" {
+			sourceTag = "NMAP"
+		}
+
 		tableData = append(tableData, []string{
 			p.IP,
 			fmt.Sprintf("%d/%s", p.Port, strings.ToUpper(p.Protocol)),
 			service,
+			sourceTag,
 			strings.ToUpper(p.State),
 			resp,
 		})
@@ -395,6 +406,35 @@ func PrintHttpAuditTable(findings []HttpAuditFinding) {
 		WithData(tableData).Render()
 }
 
+// PrintNSETable displays Nmap Scripting Engine vulnerability/audit findings.
+func PrintNSETable(findings []NSEFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	tableData := pterm.TableData{
+		{"Hedef", "Port", "NSE Script", "Durum", "Şiddet", "Çıktı Özeti"},
+	}
+	for _, f := range findings {
+		outSnippet := f.Output
+		if len(outSnippet) > 50 {
+			outSnippet = outSnippet[:47] + "..."
+		}
+		outSnippet = strings.ReplaceAll(outSnippet, "\n", " ")
+
+		tableData = append(tableData, []string{
+			f.Host,
+			strconv.Itoa(f.Port),
+			f.Script,
+			f.State,
+			f.Severity,
+			outSnippet,
+		})
+	}
+	pterm.Println()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgRed, pterm.Bold)).
+		WithData(tableData).Render()
+}
+
 // PrintSummaryTable displays final executive scan summary.
 func PrintSummaryTable(report CompleteScanReport) {
 	pterm.Println()
@@ -412,6 +452,16 @@ func PrintSummaryTable(report CompleteScanReport) {
 		{"Keşfedilen Canlı Hostlar", strconv.Itoa(report.TotalHosts)},
 		{"Açık Port Sayısı", strconv.Itoa(report.TotalOpenPorts)},
 		{"Web Dizin / Dosya Bulguları", strconv.Itoa(report.TotalFindings)},
+	}...)
+
+	if len(report.NSEFindings) > 0 {
+		tableData = append(tableData, []string{"Nmap NSE Bulguları", strconv.Itoa(len(report.NSEFindings))})
+	}
+	if len(report.ConflictingPorts) > 0 {
+		tableData = append(tableData, []string{"⚠️ Çelişkili Portlar (Conflict)", strconv.Itoa(len(report.ConflictingPorts))})
+	}
+
+	tableData = append(tableData, [][]string{
 		{"Toplam Tarama Süresi", fmt.Sprintf("%.2f saniye", report.DurationSeconds)},
 		{"Özet Dosyası (TXT)", "output/summary.txt"},
 		{"HTML Dashboard Raporu", "output/report.html"},

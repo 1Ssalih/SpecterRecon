@@ -21,7 +21,22 @@ func BuildCompleteReport(
 	services []core.ServiceDetail,
 	findings []core.DirFuzzFinding,
 	durationSeconds float64,
+	extra ...interface{},
 ) core.CompleteScanReport {
+	var (
+		nseFindings      []core.NSEFinding
+		conflictingPorts []core.PortInfo
+	)
+
+	for _, ex := range extra {
+		switch v := ex.(type) {
+		case []core.NSEFinding:
+			nseFindings = v
+		case []core.PortInfo:
+			conflictingPorts = v
+		}
+	}
+
 	if len(hosts) == 0 && len(ports) > 0 {
 		seenIPs := make(map[string]bool)
 		for _, p := range ports {
@@ -55,11 +70,27 @@ func BuildCompleteReport(
 			}
 		}
 
+		var hNSE []core.NSEFinding
+		for _, nse := range nseFindings {
+			if nse.Host == h.IP || strings.Contains(nse.Host, h.IP) {
+				hNSE = append(hNSE, nse)
+			}
+		}
+
+		var hConflicts []core.PortInfo
+		for _, cp := range conflictingPorts {
+			if cp.IP == h.IP {
+				hConflicts = append(hConflicts, cp)
+			}
+		}
+
 		hostReports = append(hostReports, core.HostScanReport{
-			Host:        h,
-			Ports:       hPorts,
-			Services:    hServices,
-			DirFindings: hFindings,
+			Host:             h,
+			Ports:            hPorts,
+			Services:         hServices,
+			DirFindings:      hFindings,
+			NSEFindings:      hNSE,
+			ConflictingPorts: hConflicts,
 		})
 	}
 
@@ -67,16 +98,18 @@ func BuildCompleteReport(
 	_, _ = rand.Read(randomID)
 
 	return core.CompleteScanReport{
-		ScanID:          fmt.Sprintf("%x", randomID),
-		Target:          target,
-		ScanDate:        time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-		DurationSeconds: durationSeconds,
-		DNSFindings:     dnsFindings,
-		TotalDNSRecords: len(dnsFindings),
-		Hosts:           hostReports,
-		TotalHosts:      len(hostReports),
-		TotalOpenPorts:  len(ports),
-		TotalFindings:   len(findings),
+		ScanID:           fmt.Sprintf("%x", randomID),
+		Target:           target,
+		ScanDate:         time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		DurationSeconds:  durationSeconds,
+		DNSFindings:      dnsFindings,
+		TotalDNSRecords:  len(dnsFindings),
+		Hosts:            hostReports,
+		TotalHosts:       len(hostReports),
+		TotalOpenPorts:   len(ports),
+		TotalFindings:    len(findings),
+		NSEFindings:      nseFindings,
+		ConflictingPorts: conflictingPorts,
 	}
 }
 

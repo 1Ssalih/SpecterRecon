@@ -500,6 +500,83 @@
     </div>
     {{ end }}
 
+    {{ if .ConflictingPorts }}
+    <!-- Conflicting Ports Section (Masscan vs Native Handshake) -->
+    <div class="section-card" style="border-left: 4px solid var(--crit-color);">
+      <div class="section-header">
+        <div class="section-title" style="color:var(--crit-color)"><span>⚠️</span> Çelişkili Port Bulguları (Conflicting Ports)</div>
+        <span class="section-badge" style="background:rgba(239,68,68,0.2); color:#f87171;">{{ len .ConflictingPorts }} Çelişki</span>
+      </div>
+      <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:1rem;">
+        Masscan tarafından açık (SYN-ACK) bildirilen ancak SpecterRecon native TCP handshake ile erişilemeyen veya filtrelenen portlar listelenmektedir.
+      </p>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>IP Adresi</th><th>Port/Protokol</th><th>Kaynak</th><th>Doğrulama Durumu</th><th>Olası Neden</th></tr>
+          </thead>
+          <tbody>
+            {{ range .ConflictingPorts }}
+            <tr>
+              <td><strong>{{ .IP }}</strong></td>
+              <td><span class="badge badge-crit">{{ .Port }}/{{ .Protocol }}</span></td>
+              <td><span class="badge badge-high">{{ .Source }}</span></td>
+              <td><span class="badge badge-crit">❌ TCP Handshake Başarısız</span></td>
+              <td><small style="color:var(--text-muted)">SYN-Proxy, Stateless Firewall veya Geçici Paket Düşmesi</small></td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{ end }}
+
+    {{ if .NSEFindings }}
+    <!-- Nmap NSE Findings Section -->
+    <div class="section-card" style="border-left: 4px solid var(--cyan-accent);">
+      <div class="section-header">
+        <div class="section-title"><span>🛡️</span> Nmap NSE Zafiyet & Denetim Bulguları</div>
+        <span class="section-badge">{{ len .NSEFindings }} Bulgular</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>Hedef & Port</th><th>NSE Script Adı</th><th>Durum</th><th>Şiddet</th><th>Script Çıktısı</th></tr>
+          </thead>
+          <tbody>
+            {{ range .NSEFindings }}
+            <tr>
+              <td><strong>{{ .Host }}:{{ .Port }}</strong></td>
+              <td><span class="code-tag">{{ .Script }}</span></td>
+              <td>
+                {{ if eq .State "VULNERABLE" }}
+                  <span class="badge badge-crit">🔥 ZAFİYET TESPİT EDİLDİ</span>
+                {{ else if eq .State "LIKELY_VULNERABLE" }}
+                  <span class="badge badge-high">⚠️ OLASI ZAFİYET</span>
+                {{ else }}
+                  <span class="badge badge-low">{{ .State }}</span>
+                {{ end }}
+              </td>
+              <td>
+                {{ if eq .Severity "CRITICAL" }}
+                  <span class="badge badge-crit">CRITICAL</span>
+                {{ else if eq .Severity "HIGH" }}
+                  <span class="badge badge-crit">HIGH</span>
+                {{ else if eq .Severity "MEDIUM" }}
+                  <span class="badge badge-high">MEDIUM</span>
+                {{ else }}
+                  <span class="badge badge-low">{{ .Severity }}</span>
+                {{ end }}
+              </td>
+              <td><pre style="margin:0; font-size:0.75rem; background:rgba(0,0,0,0.3); padding:0.5rem; border-radius:4px; max-height:120px; overflow:auto;">{{ .Output }}</pre></td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{ end }}
+
     <footer>
       <p>Bu rapor <strong>SpecterRecon SOC Engine (Go)</strong> tarafından otomatik üretilmiştir.</p>
       <p style="margin-top:0.2rem; font-size:0.72rem; color:#484f58">Yalnızca yetkilendirilmiş güvenlik değerlendirme ve lab ortamlarında geçerlidir.</p>

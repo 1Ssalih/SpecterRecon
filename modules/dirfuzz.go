@@ -400,6 +400,11 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 429 || resp.StatusCode == 503 {
+		// Adaptive Rate-Limit Backoff
+		time.Sleep(600 * time.Millisecond)
+	}
+
 	latency := float64(time.Since(start).Nanoseconds()) / 1e6
 
 	if statusFilter[resp.StatusCode] {

@@ -35,6 +35,14 @@ var CommonServiceNames = map[int]string{
 	9090: "prometheus", 9200: "elasticsearch", 11211: "memcached", 27017: "mongodb",
 }
 
+// GuessServiceName returns the common service name for a well-known port or "unknown".
+func GuessServiceName(port int) string {
+	if name, ok := CommonServiceNames[port]; ok {
+		return name
+	}
+	return "unknown"
+}
+
 // ParsePortSpecs parses port string specifications into a sorted slice of ports.
 func ParsePortSpecs(spec string) []int {
 	spec = strings.ToLower(strings.TrimSpace(spec))

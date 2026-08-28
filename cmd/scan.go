@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/specter-recon/recon-tool/core"
@@ -18,6 +19,11 @@ var (
 	outputDirFlag    string
 	extendedFlag     bool   // --extended: SSL/HTTP/SSH audit modüllerini aktif eder
 	wordlistSizeFlag string // --wordlist-size: quick (küçük listeler) veya full (SecLists)
+	profileFlag      string // --profile: aggressive | balanced | stealth
+	nmapXMLFlag      string // --nmap-xml: Nmap XML import dosyası
+	masscanJSONFlag  string // --masscan-json: Masscan JSON import dosyası
+	useMasscanFlag   bool   // --use-masscan: Masscan subprocess çalıştır
+	useNmapNSEFlag   bool   // --use-nmap-nse: Nmap NSE subprocess çalıştır
 )
 
 var scanCmd = &cobra.Command{
@@ -25,25 +31,30 @@ var scanCmd = &cobra.Command{
 	Short: "Hedef üzerinde DNS + Discovery + Port + Banner + DirFuzz recon pipeline'ı çalıştırır",
 	Long: `Hedef üzerinde otomatik keşif (recon) pipeline'ı çalıştırır.
 
-Varsayılan olarak çekirdek modüller çalışır: DNS, Host Discovery, Port Scan,
-Banner Grabbing ve Web Directory Fuzzing (Akıllı Wordlist / SecLists).
+Tarama Profilleri (--profile):
+  • balanced   : Native Go worker pool (Varsayılan, dengeli ve kararlı)
+  • aggressive : Masscan (raw SYN) + Nmap NSE + SecLists Full Fuzzing
+  • stealth    : Düşük worker, randomize gecikmeli istekler, Masscan/NSE kapalı
 
---extended bayrağıyla pasif genişletilmiş modüller de aktif edilir:
-SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit.`,
-	Example: `  # Temel recon taraması
+Entegrasyon Modları:
+  • --nmap-xml      : Önceden alınmış Nmap XML çıktısını içe aktarır
+  • --masscan-json  : Önceden alınmış Masscan JSON çıktısını içe aktarır
+  • --use-masscan   : Masscan sürecini otomatik tetikler
+  • --use-nmap-nse  : Tespit edilen servislere özel NSE scriptlerini tetikler`,
+	Example: `  # Temel recon taraması (Balanced profil)
   specter-recon scan example.com --authorized
 
-  # Subdomain brute-force dahil
-  specter-recon scan example.com --subdomains --authorized
+  # Saldırgan / Hızlı Profil (Masscan + Nmap NSE)
+  specter-recon scan 10.0.0.0/16 --profile aggressive --authorized
 
-  # Genişletilmiş modüllerle (SSL + HTTP Audit + SSH Audit)
-  specter-recon scan example.com --extended --authorized
+  # Gizli / Stealth Profil (Gecikmeli, sessiz)
+  specter-recon scan example.com --profile stealth -d 100 --authorized
 
-  # Kapsamlı SecLists wordlist ile derin web dizin taraması
-  specter-recon scan example.com --wordlist-size full --authorized
+  # Nmap XML İçe Aktarma (Import Modu)
+  specter-recon scan --nmap-xml nmap_results.xml --authorized
 
-  # Özel port aralığı ve thread limiti ile
-  specter-recon scan 192.168.1.10 -p 1-1024 -t 100 --authorized`,
+  # Masscan JSON İçe Aktarma ve Doğrulama
+  specter-recon scan --masscan-json masscan_out.json --authorized`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		target := args[0]
@@ -54,17 +65,44 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 		core.EnsureOutputDir(outputDirFlag)
 
 		startTime := time.Now()
-		profileLabel := "basic"
-		if extendedFlag {
-			profileLabel = "extended"
+
+		// Apply Profile Configurations
+		profile := strings.ToLower(profileFlag)
+		if profile == "" {
+			profile = "balanced"
 		}
-		core.LogAudit("FULL_PIPELINE_START", target, fmt.Sprintf("profile=%s, ports=%s, threads=%d", profileLabel, portsFlag, threadsFlag), "SUCCESS")
+		if profile == "aggressive" {
+			wordlistSizeFlag = "full"
+			if threadsFlag < 100 {
+				threadsFlag = 100
+			}
+			if !cmd.Flags().Changed("use-masscan") && modules.CheckToolAvailable("masscan") {
+				useMasscanFlag = true
+			}
+			if !cmd.Flags().Changed("use-nmap-nse") && modules.CheckToolAvailable("nmap") {
+				useNmapNSEFlag = true
+			}
+		} else if profile == "stealth" {
+			if delayFlag == 0 {
+				delayFlag = 100
+			}
+			if threadsFlag > 20 {
+				threadsFlag = 20
+			}
+			useMasscanFlag = false
+			useNmapNSEFlag = false
+		}
+
+		core.LogInfo("Seçilen Tarama Profili: [%s] (Threads: %d, Gecikme: %dms, Wordlist: %s)",
+			strings.ToUpper(profile), threadsFlag, delayFlag, strings.ToUpper(wordlistSizeFlag))
+		core.LogAudit("FULL_PIPELINE_START", target, fmt.Sprintf("profile=%s, ports=%s, threads=%d, masscan=%v, nse=%v",
+			profile, portsFlag, threadsFlag, useMasscanFlag, useNmapNSEFlag), "SUCCESS")
 
 		var dnsFindings []core.DNSFinding
 		discoveryTarget := target
 
-		// Step 0: DNS Enumeration (if target is a domain name)
-		if modules.IsDomainName(target) {
+		// Step 0: DNS Enumeration (if target is a domain name and no nmap-xml import)
+		if nmapXMLFlag == "" && masscanJSONFlag == "" && modules.IsDomainName(target) {
 			core.LogStep("Modül 0: DNS Enumeration")
 			var uniqueIPs []string
 			var err error
@@ -81,7 +119,7 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 			if len(uniqueIPs) > 0 {
 				core.LogInfo("DNS üzerinden %d IP adresi çıkarıldı.", len(uniqueIPs))
 			}
-		} else {
+		} else if !modules.IsDomainName(target) {
 			core.LogInfo("Hedef doğrudan IP/CIDR olarak algılandı ('%s'), DNS Enumeration atlandı.", target)
 		}
 
@@ -103,18 +141,27 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 				}
 			}
 			_ = core.SaveHosts(hosts, fmt.Sprintf("%s/hosts.json", outputDirFlag))
-		} else {
+		} else if nmapXMLFlag == "" && masscanJSONFlag == "" {
 			hosts, _ = modules.DiscoverHosts(discoveryTarget, nil, 2*time.Second, threadsFlag, fmt.Sprintf("%s/hosts.json", outputDirFlag))
 		}
 
-		if len(hosts) == 0 {
+		if len(hosts) == 0 && nmapXMLFlag == "" && masscanJSONFlag == "" {
 			core.LogWarning("'%s' için canlı host tespit edilemedi. Doğrudan hedefe bağlanmayı deniyoruz...", target)
 			hosts = []core.HostInfo{core.NewHostInfo(target, "direct")}
 		}
-		core.PrintHostsTable(hosts)
+		if len(hosts) > 0 {
+			core.PrintHostsTable(hosts)
+		}
 
-		// Step 2: Port Scanning
+		// Step 2: Port Scanning (Import / Masscan / Native)
 		core.LogStep("Adım 2: Port & Servis Taraması")
+		var (
+			openPorts        []core.PortInfo
+			conflictingPorts []core.PortInfo
+			importedServices []core.ServiceDetail
+			importedNSE      []core.NSEFinding
+		)
+
 		var targetIPs []string
 		seenIPs := make(map[string]bool)
 		hostMap := make(map[string]string)
@@ -127,13 +174,59 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 				hostMap[h.IP] = h.Hostname
 			}
 		}
-		parsedPorts := modules.ParsePortSpecs(portsFlag)
-		openPorts, _ := modules.ScanMultipleHosts(targetIPs, parsedPorts, threadsFlag, 1500*time.Millisecond, fmt.Sprintf("%s/ports.json", outputDirFlag))
+
+		if nmapXMLFlag != "" {
+			// Seviye 1: Nmap XML İçe Aktarma
+			core.LogInfo("Seviye 1 İçe Aktarma: Nmap XML dosyası okunuyor (%s)...", nmapXMLFlag)
+			impHosts, impPorts, impServices, impNSE, err := modules.LoadNmapXMLFile(nmapXMLFlag)
+			if err != nil {
+				core.LogError("Nmap XML dosyası yüklenemedi: %v", err)
+			} else {
+				if len(impHosts) > 0 {
+					hosts = impHosts
+				}
+				openPorts = impPorts
+				importedServices = impServices
+				importedNSE = impNSE
+				core.LogSuccess("Nmap XML başarıyla içe aktarıldı: %d host, %d açık port, %d servis, %d NSE bulgusu.",
+					len(hosts), len(openPorts), len(importedServices), len(importedNSE))
+			}
+		} else if masscanJSONFlag != "" {
+			// Seviye 1: Masscan JSON İçe Aktarma & Doğrulama
+			core.LogInfo("Seviye 1 İçe Aktarma: Masscan JSON dosyası okunuyor (%s)...", masscanJSONFlag)
+			impHosts, impPorts, err := modules.LoadMasscanJSONFile(masscanJSONFlag)
+			if err != nil {
+				core.LogError("Masscan JSON dosyası yüklenemedi: %v", err)
+			} else {
+				if len(impHosts) > 0 {
+					hosts = impHosts
+				}
+				openPorts, conflictingPorts = modules.VerifyPortsWithHandshake(impPorts, threadsFlag, 1500*time.Millisecond)
+			}
+		} else if useMasscanFlag {
+			// Seviye 2: Masscan Subprocess Taraması
+			mHosts, mPorts, mErr := modules.RunMasscanSubprocess(target, portsFlag, 10000, 2*time.Minute)
+			if mErr != nil {
+				core.LogWarning("Masscan çalıştırılamadı (%v). Native Go port tarayıcısına geçiliyor...", mErr)
+				parsedPorts := modules.ParsePortSpecs(portsFlag)
+				openPorts, _ = modules.ScanMultipleHosts(targetIPs, parsedPorts, threadsFlag, 1500*time.Millisecond, fmt.Sprintf("%s/ports.json", outputDirFlag))
+			} else {
+				if len(mHosts) > 0 {
+					hosts = mHosts
+				}
+				openPorts, conflictingPorts = modules.VerifyPortsWithHandshake(mPorts, threadsFlag, 1500*time.Millisecond)
+			}
+		} else {
+			// Varsayılan: Native Go Worker Pool Port Scanner
+			parsedPorts := modules.ParsePortSpecs(portsFlag)
+			openPorts, _ = modules.ScanMultipleHosts(targetIPs, parsedPorts, threadsFlag, 1500*time.Millisecond, fmt.Sprintf("%s/ports.json", outputDirFlag))
+		}
+
 		if len(openPorts) == 0 {
 			core.LogWarning("Hiçbir açık port tespit edilemedi. Tarama sonlandırılıyor.")
 			earlyDuration := time.Since(startTime).Seconds()
-			report := modules.BuildCompleteReport(target, dnsFindings, hosts, nil, nil, nil, earlyDuration)
-			report.ScanProfile = profileLabel
+			report := modules.BuildCompleteReport(target, dnsFindings, hosts, nil, nil, nil, earlyDuration, nil, conflictingPorts)
+			report.ScanProfile = profile
 			_, _ = modules.GenerateHTMLReport(report, "", fmt.Sprintf("%s/report.html", outputDirFlag))
 			_ = core.SaveSummaryTxt(target, hosts, nil, nil, nil, earlyDuration, fmt.Sprintf("%s/summary.txt", outputDirFlag))
 			core.PrintSummaryTable(report)
@@ -151,9 +244,58 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 		core.PrintPortsTable(openPorts)
 
 		// Step 3: Banner Grabbing & Service Detection
-		core.LogStep("Adım 3: Banner Grabbing & Versiyon Tespiti")
-		services, _ := modules.GrabBannersAndServices(openPorts, min(30, threadsFlag), 3500*time.Millisecond, fmt.Sprintf("%s/services.json", outputDirFlag))
+		var services []core.ServiceDetail
+		if len(importedServices) > 0 {
+			services = importedServices
+		} else {
+			core.LogStep("Adım 3: Banner Grabbing & Versiyon Tespiti")
+			services, _ = modules.GrabBannersAndServices(openPorts, min(30, threadsFlag), 3500*time.Millisecond, fmt.Sprintf("%s/services.json", outputDirFlag))
+		}
 		core.PrintServicesTable(services)
+
+		// Step 3.5: Nmap NSE Vulnerability Auditing (Level 3 Integration)
+		var nseFindings []core.NSEFinding
+		if len(importedNSE) > 0 {
+			nseFindings = importedNSE
+		}
+		if useNmapNSEFlag && len(openPorts) > 0 {
+			core.LogStep("Adım 3.5: Nmap NSE Zafiyet Taraması")
+			nseMappings := modules.LoadNSEMappings("config.yaml")
+
+			portScriptMap := make(map[int][]string)
+			for _, s := range services {
+				scrs := modules.GetNSEScriptsForPortAndService(s.Port, s.ServiceName, nseMappings)
+				if len(scrs) > 0 {
+					portScriptMap[s.Port] = append(portScriptMap[s.Port], scrs...)
+				}
+			}
+
+			var targetPortNums []int
+			var allScriptsToRun []string
+			scriptSet := make(map[string]bool)
+
+			for p, scrs := range portScriptMap {
+				targetPortNums = append(targetPortNums, p)
+				for _, sc := range scrs {
+					if !scriptSet[sc] {
+						scriptSet[sc] = true
+						allScriptsToRun = append(allScriptsToRun, sc)
+					}
+				}
+			}
+
+			if len(targetPortNums) > 0 && len(allScriptsToRun) > 0 {
+				liveNSE, nseErr := modules.RunNmapNSESubprocess(target, targetPortNums, allScriptsToRun, 3*time.Minute)
+				if nseErr != nil {
+					core.LogWarning("Nmap NSE çalıştırılamadı: %v", nseErr)
+				} else {
+					nseFindings = append(nseFindings, liveNSE...)
+				}
+			}
+		}
+		if len(nseFindings) > 0 {
+			core.PrintNSETable(nseFindings)
+		}
 
 		// --- GENİŞLETİLMİŞ PASİF MODÜLLER (--extended) ---
 		var sslFindings []core.SslFinding
@@ -161,17 +303,14 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 		var sshFindings []core.SshAuditFinding
 
 		if extendedFlag {
-			// SSL/TLS Audit
 			core.LogStep("Genişletilmiş Modül: SSL/TLS Sertifika & Protokol Denetimi")
 			sslFindings, _ = modules.AuditSSLMultiple(services, 4*time.Second, fmt.Sprintf("%s/ssl_findings.json", outputDirFlag))
 			core.PrintSslTable(sslFindings)
 
-			// HTTP Security Audit
 			core.LogStep("Genişletilmiş Modül: HTTP Güvenlik Denetimi (Headers, CORS, Methods)")
 			httpAuditFindings, _ = modules.AuditHTTPMultiple(services, 5*time.Second, fmt.Sprintf("%s/http_audit.json", outputDirFlag))
 			core.PrintHttpAuditTable(httpAuditFindings)
 
-			// SSH Audit
 			core.LogStep("Genişletilmiş Modül: SSH Algoritma & Konfigürasyon Denetimi")
 			sshFindings, _ = modules.AuditSSHMultiple(services, 4*time.Second, fmt.Sprintf("%s/ssh_audit.json", outputDirFlag))
 		}
@@ -204,8 +343,8 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 		// Step 5: Reporting
 		core.LogStep("Adım 5: Raporlama")
 		duration := time.Since(startTime).Seconds()
-		report := modules.BuildCompleteReport(target, dnsFindings, hosts, openPorts, services, dirFindings, duration)
-		report.ScanProfile = profileLabel
+		report := modules.BuildCompleteReport(target, dnsFindings, hosts, openPorts, services, dirFindings, duration, nseFindings, conflictingPorts)
+		report.ScanProfile = profile
 
 		// Attach extended findings
 		report.SslFindings = sslFindings
@@ -218,7 +357,7 @@ SSL/TLS Sertifika Audit, HTTP Security Headers Audit ve SSH Konfigürasyon Audit
 		summaryPath := fmt.Sprintf("%s/summary.txt", outputDirFlag)
 		if err := core.SaveSummaryTxt(
 			target, hosts, openPorts, services, dirFindings, duration, summaryPath,
-			sslFindings, httpAuditFindings, sshFindings,
+			sslFindings, httpAuditFindings, sshFindings, nseFindings,
 		); err == nil {
 			core.LogSuccess("Tarama özeti kaydedildi: %s", summaryPath)
 		}
@@ -236,6 +375,12 @@ func init() {
 	scanCmd.Flags().StringVarP(&outputDirFlag, "output-dir", "o", "output", "Çıktı klasörü")
 	scanCmd.Flags().BoolVar(&extendedFlag, "extended", false, "Genişletilmiş pasif modülleri aktif eder (SSL/TLS + HTTP Audit + SSH Audit)")
 	scanCmd.Flags().StringVar(&wordlistSizeFlag, "wordlist-size", "quick", "Wordlist boyutu: 'quick' (küçük/hızlı listeler) veya 'full' (SecLists)")
+	scanCmd.Flags().StringVar(&profileFlag, "profile", "balanced", "Tarama profili: 'aggressive' (Masscan+NSE), 'balanced' (Varsayılan), 'stealth' (Sessiz)")
+	scanCmd.Flags().StringVar(&nmapXMLFlag, "nmap-xml", "", "İçe aktarılacak Nmap XML çıktı dosyası (-oX)")
+	scanCmd.Flags().StringVar(&masscanJSONFlag, "masscan-json", "", "İçe aktarılacak Masscan JSON çıktı dosyası (-oJ)")
+	scanCmd.Flags().BoolVar(&useMasscanFlag, "use-masscan", false, "Masscan ile port taraması çalıştırır (Root/Admin gerektirir)")
+	scanCmd.Flags().BoolVar(&useNmapNSEFlag, "use-nmap-nse", false, "Tespit edilen servislere özel Nmap NSE zafiyet scriptlerini çalıştırır")
 
 	RootCmd.AddCommand(scanCmd)
 }
+
