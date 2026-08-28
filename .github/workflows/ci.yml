@@ -1,0 +1,45 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Build & Test (Multi-OS)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        go: ['1.21', '1.22', '1.23']
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Go ${{ matrix.go }}
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go }}
+        cache: true
+
+    - name: Verify Dependencies
+      run: go mod verify
+
+    - name: Run Go Vet
+      run: go vet ./...
+
+    - name: Run Unit Tests
+      run: go test -v -race ./...
+      if: matrix.os != 'windows'
+
+    - name: Run Unit Tests (Windows)
+      run: go test -v ./...
+      if: matrix.os == 'windows'
+
+    - name: Build Binary
+      run: go build -v -o specter-recon ./main.go

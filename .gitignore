@@ -1,11 +1,13 @@
-# Python
+# Python & Virtual Environments
 .venv/
 venv/
 __pycache__/
 *.pyc
 *.pyo
 
-# Go binaries & installer files
+# Compiled Binaries & Test Artifacts
+specter-recon
+specter-recon.exe
 *.exe
 *.exe~
 *.dll
@@ -13,12 +15,22 @@ __pycache__/
 *.dylib
 *.msi
 *.test
+*.out
 
-# Output & scan results
+# Scan Output & Recon Artifacts (CRITICAL: Never commit scan data)
 output/
 modules/output/
+*.log
+audit.log
 
-# IDE / Editor
+# Environment & Secret Overrides
+*.env
+.env.*
+config.local.yaml
+secrets.yaml
+
+# IDE & OS Metadata
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
