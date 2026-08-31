@@ -24,17 +24,41 @@ func AuditSSLService(ip string, port int, timeout time.Duration, hostname ...str
 		Severity: "INFO",
 	}
 
-	sniHost := ip
+	sniHost := ""
 	if len(hostname) > 0 && hostname[0] != "" {
 		sniHost = hostname[0]
 	}
 
-	// Attempt connection with TLS InsecureSkipVerify and SNI
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, &tls.Config{
-		InsecureSkipVerify: true,
-		ServerName:         sniHost,
-		MinVersion:         tls.VersionTLS10,
-	})
+	dialer := &net.Dialer{Timeout: timeout}
+	var conn *tls.Conn
+	var err error
+
+	// 1. Attempt connection with TLS InsecureSkipVerify and SNI (if hostname available)
+	if sniHost != "" {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         sniHost,
+			MinVersion:         tls.VersionTLS10,
+		})
+	}
+
+	// 2. Fallback: Dial without SNI (empty ServerName) for IP-only endpoints or servers rejecting unrecognized SNI
+	if conn == nil || err != nil {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         "",
+			MinVersion:         tls.VersionTLS10,
+		})
+	}
+
+	// 3. Fallback: Dial with TLS 1.2+ for modern servers rejecting legacy ClientHello
+	if conn == nil || err != nil {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         sniHost,
+			MinVersion:         tls.VersionTLS12,
+		})
+	}
 
 	if err != nil {
 		finding.Notes = []string{fmt.Sprintf("TLS bağlantısı kurulamadı: %v", err)}
@@ -92,7 +116,7 @@ func AuditSSLService(ip string, port int, timeout time.Duration, hostname ...str
 	for _, p := range protocols {
 		testConn, err := tls.DialWithDialer(&net.Dialer{Timeout: 1500 * time.Millisecond}, "tcp", addr, &tls.Config{
 			InsecureSkipVerify: true,
-			ServerName:         ip,
+			ServerName:         sniHost,
 			MinVersion:         p.ver,
 			MaxVersion:         p.ver,
 		})
@@ -103,6 +127,7 @@ func AuditSSLService(ip string, port int, timeout time.Duration, hostname ...str
 			severity = "HIGH"
 		}
 	}
+
 
 	// SANs (Subject Alternative Names)
 	var sans []string

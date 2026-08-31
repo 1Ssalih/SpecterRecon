@@ -1137,7 +1137,7 @@ func TestCatchAll302DynamicQueryAnd401Detection(t *testing.T) {
 		dest := fmt.Sprintf("/Login.aspx?ReturnUrl=%s", url.QueryEscape(r.URL.Path))
 		w.Header().Set("Location", dest)
 		w.WriteHeader(http.StatusFound)
-		_, _ = w.Write([]byte("<html><body>Object moved</body></html>"))
+		_, _ = w.Write([]byte("<html><body>Object moved to login</body></html>"))
 	}))
 	defer server302.Close()
 
@@ -1184,3 +1184,137 @@ func TestCatchAll302DynamicQueryAnd401Detection(t *testing.T) {
 		t.Errorf("401 Catch-All üzerindeki admin yolu filtrelenmeliydi: %+v", res401)
 	}
 }
+
+func TestCatchAll200Soft404And500Baseline(t *testing.T) {
+	// 1. Soft-404 returning 200 OK with identical body for all paths
+	server200 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/real-secret.txt" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("REAL_SECRET_CONTENT_12345"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html><head><title>Custom Error Page</title></head><body>Page Not Found Custom Soft 404</body></html>"))
+	}))
+	defer server200.Close()
+
+	client200 := &http.Client{
+		Transport: server200.Client().Transport,
+	}
+
+	baseline200 := DetectBaselineResponse(client200, server200.URL, "")
+	if !baseline200.IsCatchAll || baseline200.StatusCode != 200 {
+		t.Errorf("200 Soft-404 Catch-All tespit edilemedi: %+v", baseline200)
+	}
+
+	wordlist := []string{"admin", "login", "config.php", "test", "real-secret.txt"}
+	findings := FuzzTargetService(server200.URL, wordlist, "test", 2, 0)
+
+	// Only /real-secret.txt should pass through, soft-404s must be filtered!
+	if len(findings) != 1 || findings[0].Path != "/real-secret.txt" {
+		t.Errorf("Soft-404 200 filtrelenemedi: bulunan sayi=%d, bulgular=%+v", len(findings), findings)
+	}
+
+	// 2. 500 Internal Server Error Baseline
+	server500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("Internal Server Error - Generic Exception"))
+	}))
+	defer server500.Close()
+
+	client500 := &http.Client{
+		Transport: server500.Client().Transport,
+	}
+
+	baseline500 := DetectBaselineResponse(client500, server500.URL, "")
+	if !baseline500.IsCatchAll || baseline500.StatusCode != 500 {
+		t.Errorf("500 Catch-All tespit edilemedi: %+v", baseline500)
+	}
+}
+
+func TestCatchAllRealScanScenarioFalsePositivePrevention(t *testing.T) {
+	// Simulating the exact 10.0.0.88:443 real-world bug:
+	// 200+ words returning 302 with dynamic ReturnUrl
+	serverRealWorld := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dest := fmt.Sprintf("/auth/login.aspx?ReturnUrl=%s", url.QueryEscape(r.URL.Path))
+		w.Header().Set("Location", dest)
+		w.WriteHeader(http.StatusFound)
+		_, _ = w.Write([]byte(fmt.Sprintf("<html><body>Object moved <a href=\"%s\">here</a></body></html>", dest)))
+	}))
+	defer serverRealWorld.Close()
+
+	words := []string{
+		"aspxshell.aspx", "zehir.aspx", "web.config", "wp-config.php",
+		"admin", "login", "api", "backup.sql", "id_rsa", "config",
+		"secret", ".env", "test", "appsettings.json",
+	}
+
+	findings := FuzzTargetService(serverRealWorld.URL, words, "test", 4, 0)
+	// All should be suppressed as wildcard 302, zero false positives!
+	if len(findings) != 0 {
+		t.Errorf("302 Wildcard üzerinde sahte bulgular sızdı (sayi: %d): %+v", len(findings), findings)
+	}
+}
+
+func TestTCPProbeUnifiedAndSync(t *testing.T) {
+	// 1. Open port
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("TCP listener açılamadı: %v", err)
+	}
+	defer ln.Close()
+
+	_, pStr, _ := net.SplitHostPort(ln.Addr().String())
+	openPort, _ := strconv.Atoi(pStr)
+
+	lat, isOpen, err := TCPProbe("127.0.0.1", openPort, 1*time.Second)
+	if !isOpen || lat == nil || err != nil {
+		t.Errorf("TCPProbe açık portu tespit edemedi: isOpen=%v, lat=%v, err=%v", isOpen, lat, err)
+	}
+
+	// AsyncTCPPing wrapper
+	latPing, isPingOpen := AsyncTCPPing("127.0.0.1", openPort, 1*time.Second)
+	if !isPingOpen || latPing == nil {
+		t.Errorf("AsyncTCPPing açık portu tespit edemedi: isOpen=%v, lat=%v", isPingOpen, latPing)
+	}
+
+	// 2. Closed port (RST)
+	latClosed, isClosedOpen, _ := TCPProbe("127.0.0.1", 59997, 300*time.Millisecond)
+	if isClosedOpen {
+		t.Errorf("Kapalı port açık döndü!")
+	}
+	// On localhost, connection refused should yield a fast latency
+	if latClosed != nil {
+		t.Logf("RST Alındı (host alive, port closed): %.2fms", *latClosed)
+	}
+}
+
+func TestScanMultipleHostsGentleRetry(t *testing.T) {
+	// Mock TCP listener on port 80 equivalent
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listener hatası: %v", err)
+	}
+	defer ln.Close()
+
+	_, pStr, _ := net.SplitHostPort(ln.Addr().String())
+	openPort, _ := strconv.Atoi(pStr)
+
+	// Scan with port list containing the open port
+	ports, errScan := ScanMultipleHosts([]string{"127.0.0.1"}, []int{openPort, 59996}, 10, 500*time.Millisecond, "")
+	if errScan != nil {
+		t.Fatalf("ScanMultipleHosts hatası: %v", errScan)
+	}
+	if len(ports) != 1 || ports[0].Port != openPort {
+		t.Errorf("Açık port bulunamadı: %+v", ports)
+	}
+}
+
+func TestAuditSSHZeroServices(t *testing.T) {
+	// Passing empty services list should return nil and no errors
+	findings, err := AuditSSHMultiple(nil, 1*time.Second, "")
+	if err != nil || len(findings) != 0 {
+		t.Errorf("Boş servis listesi için 0 bulgu bekleniyordu, alinan: %v, err: %v", len(findings), err)
+	}
+}
+

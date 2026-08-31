@@ -458,14 +458,41 @@ func isSensitivePath(path string) bool {
 	return false
 }
 
-// BaselineResponse holds characteristics of non-existent path responses for Catch-All / Wildcard detection.
-type BaselineResponse struct {
-	IsCatchAll       bool
-	IsUnresponsive   bool
+// BaselineSignature captures characteristics of a non-existent path response.
+type BaselineSignature struct {
 	StatusCode       int
 	ContentLength    int64
 	RedirectLocation string
 	Title            string
+	BodySnippetHash  uint32
+}
+
+// BaselineResponse holds characteristics of non-existent path responses for Catch-All / Wildcard detection.
+type BaselineResponse struct {
+	IsCatchAll       bool
+	IsUnresponsive   bool
+	Signatures       []BaselineSignature
+	StatusCode       int
+	ContentLength    int64
+	RedirectLocation string
+	Title            string
+	BodySnippetHash  uint32
+}
+
+func computeBodySnippetHash(body []byte) uint32 {
+	if len(body) == 0 {
+		return 0
+	}
+	limit := 128
+	if len(body) < limit {
+		limit = len(body)
+	}
+	var h uint32 = 2166136261
+	for _, b := range body[:limit] {
+		h ^= uint32(b)
+		h *= 16777619
+	}
+	return h
 }
 
 func normalizeRedirectLocation(loc string) string {
@@ -482,12 +509,14 @@ func normalizeRedirectLocation(loc string) string {
 	return loc
 }
 
-// DetectBaselineResponse probes 3 random non-existent paths to detect Wildcard / Catch-All redirection or soft 404 behavior.
+// DetectBaselineResponse probes diverse non-existent paths to detect Wildcard / Catch-All redirection or soft 404 behavior.
 func DetectBaselineResponse(client *http.Client, baseURL string, targetHost string) BaselineResponse {
 	testPaths := []string{
 		"specter-fp-check-x9y8z7-1234",
-		"non-existent-probe-a1b2c3-5678",
-		"random-garbage-check-m4n5o6-9012",
+		"non-existent-probe-a1b2c3.html",
+		"random-garbage-check-m4n5o6.aspx",
+		"test-non-exist-dir/probe.php",
+		"wildcard-check-7f8e9d-sub/index",
 	}
 
 	type probeResp struct {
@@ -495,6 +524,7 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 		length     int64
 		location   string
 		title      string
+		bodyHash   uint32
 	}
 
 	var results []probeResp
@@ -529,6 +559,7 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 			length:     int64(len(bodyBytes)),
 			location:   resp.Header.Get("Location"),
 			title:      title,
+			bodyHash:   computeBodySnippetHash(bodyBytes),
 		})
 	}
 
@@ -538,42 +569,94 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 		}
 	}
 
-	if len(results) >= 2 {
-		first := results[0]
-		allMatch := true
-		firstBaseLoc := normalizeRedirectLocation(first.location)
+	// Cluster probe responses by status code and signature
+	type sigCluster struct {
+		status   int
+		lengths  []int64
+		location string
+		title    string
+		bodyHash uint32
+		count    int
+	}
 
-		for _, r := range results[1:] {
-			if r.statusCode != first.statusCode {
-				allMatch = false
-				break
-			}
-			diff := r.length - first.length
-			if diff < 0 {
-				diff = -diff
-			}
-			rBaseLoc := normalizeRedirectLocation(r.location)
-			// Tolerant size diff (45B) or matching redirect base path
-			if diff > 45 && (firstBaseLoc == "" || firstBaseLoc != rBaseLoc) {
-				allMatch = false
-				break
+	var clusters []sigCluster
+	for _, r := range results {
+		matched := false
+		rBaseLoc := normalizeRedirectLocation(r.location)
+
+		for i := range clusters {
+			if clusters[i].status == r.statusCode {
+				cBaseLoc := normalizeRedirectLocation(clusters[i].location)
+				diff := r.length - clusters[i].lengths[0]
+				if diff < 0 {
+					diff = -diff
+				}
+
+				isRedirectMatch := (r.statusCode >= 300 && r.statusCode < 400) &&
+					(cBaseLoc == rBaseLoc || (cBaseLoc != "" && rBaseLoc != "" && strings.TrimRight(cBaseLoc, "/") == strings.TrimRight(rBaseLoc, "/")))
+
+				isBodyMatch := diff <= 60 || (clusters[i].bodyHash != 0 && clusters[i].bodyHash == r.bodyHash) || (clusters[i].title != "" && clusters[i].title == r.title)
+
+				if isRedirectMatch || isBodyMatch {
+					clusters[i].lengths = append(clusters[i].lengths, r.length)
+					clusters[i].count++
+					matched = true
+					break
+				}
 			}
 		}
 
-		if allMatch && first.statusCode != 404 && first.statusCode != 405 {
+		if !matched {
+			clusters = append(clusters, sigCluster{
+				status:   r.statusCode,
+				lengths:  []int64{r.length},
+				location: r.location,
+				title:    r.title,
+				bodyHash: r.bodyHash,
+				count:    1,
+			})
+		}
+	}
+
+	var detectedSigs []BaselineSignature
+	for _, c := range clusters {
+		// If at least 2 probe responses share the same signature and status is not standard 404/405
+		if c.count >= 2 && c.status != 404 && c.status != 405 {
+			var totalLen int64
+			for _, l := range c.lengths {
+				totalLen += l
+			}
+			avgLen := totalLen / int64(len(c.lengths))
+
+			sig := BaselineSignature{
+				StatusCode:       c.status,
+				ContentLength:    avgLen,
+				RedirectLocation: c.location,
+				Title:            c.title,
+				BodySnippetHash:  c.bodyHash,
+			}
+			detectedSigs = append(detectedSigs, sig)
+
 			destHint := ""
-			if firstBaseLoc != "" {
-				destHint = fmt.Sprintf(" ➔ %s", firstBaseLoc)
+			baseLoc := normalizeRedirectLocation(c.location)
+			if baseLoc != "" {
+				destHint = fmt.Sprintf(" ➔ %s", baseLoc)
 			}
 			core.LogWarning("Catch-All / Wildcard Yanıtı Tespit Edildi: Hedef bilinmeyen tüm yollara [%d] (~%dB%s) dönüyor. Sahte bulgular otomatik filtrelenecektir.",
-				first.statusCode, first.length, destHint)
-			return BaselineResponse{
-				IsCatchAll:       true,
-				StatusCode:       first.statusCode,
-				ContentLength:    first.length,
-				RedirectLocation: first.location,
-				Title:            first.title,
-			}
+				c.status, avgLen, destHint)
+		}
+	}
+
+	if len(detectedSigs) > 0 {
+		primary := detectedSigs[0]
+		return BaselineResponse{
+			IsCatchAll:       true,
+			Signatures:       detectedSigs,
+			StatusCode:       primary.StatusCode,
+			ContentLength:    primary.ContentLength,
+			RedirectLocation: primary.RedirectLocation,
+			Title:            primary.Title,
+			BodySnippetHash:  primary.BodySnippetHash,
 		}
 	}
 
@@ -673,6 +756,7 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 32768))
 		bodyStr := string(bodyBytes)
 		contentLen := int64(len(bodyBytes))
+		bodyHash := computeBodySnippetHash(bodyBytes)
 
 		var title string
 		if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
@@ -714,36 +798,62 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 			core.LogWarning("⚠️ DEBUG MODU / HATA SAYFASI AÇIK: %s ➔ %s", url, debugMode)
 		}
 
-		// 1. Catch-All Baseline Suppression
-		if baseline.IsCatchAll && resp.StatusCode == baseline.StatusCode {
-			diff := contentLen - baseline.ContentLength
-			if diff < 0 {
-				diff = -diff
+		// 1. Multi-Signature Catch-All Baseline Suppression
+		if baseline.IsCatchAll {
+			sigsToCheck := baseline.Signatures
+			if len(sigsToCheck) == 0 {
+				sigsToCheck = []BaselineSignature{{
+					StatusCode:       baseline.StatusCode,
+					ContentLength:    baseline.ContentLength,
+					RedirectLocation: baseline.RedirectLocation,
+					Title:            baseline.Title,
+					BodySnippetHash:  baseline.BodySnippetHash,
+				}}
 			}
+
 			baseLoc := normalizeRedirectLocation(location)
-			baseBaselineLoc := normalizeRedirectLocation(baseline.RedirectLocation)
+			for _, sig := range sigsToCheck {
+				if resp.StatusCode == sig.StatusCode {
+					diff := contentLen - sig.ContentLength
+					if diff < 0 {
+						diff = -diff
+					}
+					sigBaseLoc := normalizeRedirectLocation(sig.RedirectLocation)
 
-			// Suppress if size is within tolerance (45B) OR if redirect base path matches baseline redirect base path
-			isRedirectMatch := (resp.StatusCode == 301 || resp.StatusCode == 302 || resp.StatusCode == 303 || resp.StatusCode == 307 || resp.StatusCode == 308) &&
-				baseBaselineLoc != "" && (baseLoc == baseBaselineLoc || strings.TrimRight(baseLoc, "/") == strings.TrimRight(baseBaselineLoc, "/"))
+					isRedirectMatch := (resp.StatusCode >= 300 && resp.StatusCode < 400) &&
+						sigBaseLoc != "" && (baseLoc == sigBaseLoc || strings.TrimRight(baseLoc, "/") == strings.TrimRight(sigBaseLoc, "/"))
 
-			if diff <= 45 || isRedirectMatch {
-				// Only allow 200 OK responses through if they contain unique content or secret leaks
-				if !(resp.StatusCode == 200 && (len(leaks) > 0 || (title != baseline.Title && title != ""))) {
-					return nil
+					isBodyMatch := diff <= 60 || (sig.BodySnippetHash != 0 && bodyHash == sig.BodySnippetHash) || (sig.Title != "" && title == sig.Title)
+
+					if isRedirectMatch || isBodyMatch {
+						// Only allow 200 OK responses through if they contain genuine secret leaks or distinct debug output
+						if !(resp.StatusCode == 200 && (len(leaks) > 0 || (title != sig.Title && title != ""))) {
+							return nil
+						}
+					}
 				}
 			}
 		}
 
-		// Sensitive classification logic:
-		// A path is only considered truly sensitive if it returns 200 OK (with content), OR
-		// returns 401/403 on a target that does NOT return 401/403 as the global baseline.
-		// Redirects (301/302) are NEVER marked as sensitive!
+		// 2. Sensitive classification logic:
+		// - Redirects (301, 302, 303, 307, 308) are NEVER marked as sensitive!
+		// - 401 / 403 are only sensitive on a site that does NOT wildcard 401/403.
 		if isSensitive {
-			if resp.StatusCode == 301 || resp.StatusCode == 302 || resp.StatusCode == 303 || resp.StatusCode == 307 || resp.StatusCode == 308 {
+			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 				isSensitive = false
-			} else if (resp.StatusCode == 401 || resp.StatusCode == 403) && baseline.IsCatchAll && baseline.StatusCode == resp.StatusCode {
-				isSensitive = false
+			} else if resp.StatusCode == 401 || resp.StatusCode == 403 {
+				// Suppress sensitivity if site has 401/403 baseline
+				if baseline.IsCatchAll {
+					for _, sig := range baseline.Signatures {
+						if sig.StatusCode == resp.StatusCode {
+							isSensitive = false
+							break
+						}
+					}
+					if baseline.StatusCode == resp.StatusCode {
+						isSensitive = false
+					}
+				}
 			}
 		}
 
@@ -880,20 +990,34 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 
 				if res != nil {
 					// Dynamic soft-404 / wildcard clustering filter:
-					// Bucketize response size into 35-byte intervals
-					sizeBucket := (res.ContentLength / 35) * 35
-					freqKey := fmt.Sprintf("%d:%d", res.StatusCode, sizeBucket)
+					// Bucketize response size into 45-byte intervals and include normalized redirect base path
+					sizeBucket := (res.ContentLength / 45) * 45
+					rBaseLoc := normalizeRedirectLocation(res.RedirectLocation)
+					freqKey := fmt.Sprintf("%d:%d:%s", res.StatusCode, sizeBucket, rBaseLoc)
+
 					mu.Lock()
 					sizeFrequencyMap[freqKey]++
 					count := sizeFrequencyMap[freqKey]
-					mu.Unlock()
 
-					// If any non-200 status (e.g. 302, 401, 403, 500) repeats more than 6 times with similar size:
-					if res.StatusCode != 200 && count > 6 {
+					// If any non-200 status (e.g. 302, 401, 403, 500) repeats more than 5 times with similar signature:
+					if res.StatusCode != 200 && count > 5 {
+						if count == 6 {
+							// Prune earlier findings matching this repetitive wildcard signature
+							var pruned []core.DirFuzzFinding
+							for _, f := range findings {
+								fBaseLoc := normalizeRedirectLocation(f.RedirectLocation)
+								fKey := fmt.Sprintf("%d:%d:%s", f.StatusCode, (f.ContentLength/45)*45, fBaseLoc)
+								if fKey != freqKey {
+									pruned = append(pruned, f)
+								}
+							}
+							findings = pruned
+							core.LogWarning("Dinamik Catch-All / Wildcard Frekans Filtresi Tetiklendi: Hedef bilinmeyen yollara [%d] (~%dB) dönüyor. Tekrarlayan sahte yanıtlar engelleniyor.", res.StatusCode, res.ContentLength)
+						}
+						mu.Unlock()
 						continue // Suppress repetitive wildcard / catch-all flood
 					}
 
-					mu.Lock()
 					findings = append(findings, *res)
 					mu.Unlock()
 
@@ -930,6 +1054,7 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 	}
 
 	wg.Wait()
+
 
 	// 5. Recursive Fuzzing on Discovered High-Value Directories (e.g. /admin/, /api/, /v1/, /portal/, /app/, /backup/)
 	highValueDirNames := map[string]bool{

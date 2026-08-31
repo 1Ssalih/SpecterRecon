@@ -350,9 +350,13 @@ Entegrasyon Modları:
 			if hasSSH {
 				core.LogStep("Genişletilmiş Modül: SSH Algoritma & Konfigürasyon Denetimi")
 				sshFindings, _ = modules.AuditSSHMultiple(services, 4*time.Second, fmt.Sprintf("%s/ssh_audit.json", outputDirFlag))
+				if len(sshFindings) > 0 {
+					core.PrintSshTable(sshFindings)
+				}
 			} else {
-				core.LogInfo("Açık SSH servisi tespit edilmedi, SSH denetim adımı atlandı.")
+				core.LogInfo("0 SSH servisi bulundu, modül atlandı.")
 			}
+
 		}
 
 		// Step 4: Web Directory Fuzzing

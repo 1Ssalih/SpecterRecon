@@ -98,8 +98,10 @@ func AuditSSHMultiple(services []core.ServiceDetail, timeout time.Duration, outp
 	}
 
 	if len(targets) == 0 {
+		core.LogInfo("0 SSH servisi bulundu, modül atlandı.")
 		return nil, nil
 	}
+
 
 	core.LogInfo("SSH Güvenlik Denetimi (Algoritma & Banner Analizi) başlatılıyor (%d SSH servisi)...", len(targets))
 	var findings []core.SshAuditFinding

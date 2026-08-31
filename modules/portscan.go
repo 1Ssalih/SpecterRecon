@@ -2,7 +2,6 @@ package modules
 
 import (
 	"fmt"
-	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/specter-recon/recon-tool/core"
 )
+
 
 var Top20Ports = []int{21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 993, 995, 1723, 3306, 3389, 5900, 8080}
 
@@ -123,15 +123,11 @@ func ParsePortSpecs(spec string) []int {
 
 // ScanSinglePort attempts a TCP connect to a single target:port.
 func ScanSinglePort(ip string, port int, timeout time.Duration) *core.PortInfo {
-	addr := net.JoinHostPort(ip, strconv.Itoa(port))
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", addr, timeout)
-	if err != nil {
+	lat, isOpen, err := TCPProbe(ip, port, timeout)
+	if !isOpen || lat == nil || err != nil {
 		return nil
 	}
-	_ = conn.Close()
 
-	latency := float64(time.Since(start).Nanoseconds()) / 1e6
 	service := CommonServiceNames[port]
 	if service == "" {
 		service = "unknown"
@@ -143,7 +139,10 @@ func ScanSinglePort(ip string, port int, timeout time.Duration) *core.PortInfo {
 		Protocol:       "tcp",
 		State:          "open",
 		ServiceName:    service,
-		ResponseTimeMs: &latency,
+		ResponseTimeMs: lat,
+		Source:         "native",
+		Verified:       true,
+		Conflict:       false,
 	}
 }
 
@@ -248,22 +247,42 @@ func ScanTargetPorts(ip string, ports []int, concurrency int, timeout time.Durat
 func ScanMultipleHosts(ips []string, ports []int, concurrency int, timeout time.Duration, outputFile string) ([]core.PortInfo, error) {
 	var allPorts []core.PortInfo
 	for _, ip := range ips {
-		found, err := ScanTargetPorts(ip, ports, concurrency, timeout, "")
-		if err == nil {
-			allPorts = append(allPorts, found...)
-		} else {
-			// Quick fallback with gentle pacing in case of transient socket exhaustion
-			time.Sleep(100 * time.Millisecond)
-			retryConcurrency := concurrency
-			if retryConcurrency > 15 {
-				retryConcurrency = 15
+		found, _ := ScanTargetPorts(ip, ports, concurrency, timeout, "")
+		if len(found) == 0 {
+			// Fallback: If initial concurrent scan found 0 open ports, perform a gentle paced retry on key ports
+			// to avoid SYN flood rate-limiting and false negatives.
+			time.Sleep(50 * time.Millisecond)
+			retryConcurrency := 5
+			retryTimeout := timeout + 1000*time.Millisecond
+			if retryTimeout < 2500*time.Millisecond {
+				retryTimeout = 2500 * time.Millisecond
 			}
-			retryFound, _ := ScanTargetPorts(ip, ports, retryConcurrency, timeout+300*time.Millisecond, "")
-			allPorts = append(allPorts, retryFound...)
+
+			topPriorityPorts := []int{80, 443, 22, 53, 88, 135, 139, 389, 445, 1433, 3306, 3389, 5432, 5985, 8080, 8443}
+			var retryPorts []int
+			portMap := make(map[int]bool)
+			for _, p := range ports {
+				portMap[p] = true
+			}
+			for _, tp := range topPriorityPorts {
+				if portMap[tp] {
+					retryPorts = append(retryPorts, tp)
+				}
+			}
+
+			if len(retryPorts) > 0 {
+				core.LogInfo("Yedek (Fallback) Port Taraması deneniyor (%s): Düşük eşzamanlılık (%d), Yüksek timeout (%v)...", ip, retryConcurrency, retryTimeout)
+				retryFound, _ := ScanTargetPorts(ip, retryPorts, retryConcurrency, retryTimeout, "")
+				if len(retryFound) > 0 {
+					found = retryFound
+				}
+			}
 		}
+		allPorts = append(allPorts, found...)
 	}
 	if outputFile != "" {
 		_ = core.SavePorts(allPorts, outputFile)
 	}
 	return allPorts, nil
 }
+

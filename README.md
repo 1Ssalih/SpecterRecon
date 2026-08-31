@@ -3,11 +3,11 @@
 # ⚡ SpecterRecon (v0.8.0)
 ### *Yüksek Performanslı, Bağlam Duyarlı ve Hibrit Ağ Keşif & Zafiyet Görünürlük Motoru*
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26.0+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![CI Status](https://img.shields.io/badge/CI-GitHub_Actions-blue?style=for-the-badge&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/Release-v0.8.0_Enterprise-00f2fe?style=for-the-badge&logo=semver&logoColor=black)](#)
-[![Fuzzing](https://img.shields.io/badge/Fuzzing-Catch--All_Baseline_%2B_Secret_Scanner-brightgreen?style=for-the-badge&logo=shield&logoColor=white)](#)
+[![Fuzzing](https://img.shields.io/badge/Fuzzing-Status--Agnostic_Catch--All_%2B_Secret_Scanner-brightgreen?style=for-the-badge&logo=shield&logoColor=white)](#)
 [![Hybrid Recon](https://img.shields.io/badge/Engine-Go_Native_%7C_Masscan_%7C_Nmap_NSE-red?style=for-the-badge&logo=target&logoColor=white)](#)
 
 <br>
@@ -23,7 +23,8 @@
 ```
 
 <p align="center">
-  <b>SpecterRecon</b>, sızma testi uzmanları, siber güvenlik araştırmacıları, kırmızı takım (Red Team) ve SOC analistleri için <b>Go (Golang)</b> ile sıfırdan geliştirilmiş; <b>DNS Altyapı Güvenliği (AXFR Zone Transfer, Wildcard Tespiti, Subdomain Takeover), Canlı Host Keşfi, Yüksek Hızlı Port Tarama (Native Goroutine / Masscan Hibrit), Derin Servis & İşletim Sistemi Parmak İzi (SMB2 NTLMSSP Build, LDAP RootDSE FuncLevel, MSSQL TDS, WinRM SOAP, RDP TLS, VNC RFB, Fortinet FSSO), WAF/CDN Tespiti (Akamai, Cloudflare, AWS), Catch-All Korumalı ve Pasif Kredansiyel/Secret Sızıntı Taramalı Akıllı Web Fuzzing (SecLists & Dirb Hibrit), Nmap NSE Zafiyet Eşleme ve SOC Dashboard Raporlama</b> süreçlerini tek bir bağımsız ikili dosyada (zero-dependency binary) birleştiren kurumsal düzeyde keşif motorudur.
+  <b>SpecterRecon</b>; sızma testi uzmanları, kırmızı takım (Red Team) operatörleri, siber güvenlik araştırmacıları ve SOC analistleri için <b>Go (Golang 1.26+)</b> ile sıfırdan tasarlanmış modern bir keşif ve zafiyet görünürlük platformudur.<br>
+  <b>DNS Altyapı Güvenliği (AXFR Zone Transfer, Wildcard DNS, 25+ Sağlayıcı Subdomain Takeover), Canlı Host Keşfi, Hibrit Port Tarama (Native Goroutine / Masscan), İki Aşamalı Port Doğrulama ve Çelişki Çözümleme (Conflict Resolution), Kimliksiz Derin Protokol & İşletim Sistemi Parmak İzi (SMB2 NTLMSSP Build, LDAP RootDSE, MSSQL TDS 7.x, WinRM SOAP, RDP TLS, VNC RFB, Fortinet FSSO), WAF/CDN Tespiti (Akamai, Cloudflare, AWS), Status-Agnostic Catch-All & Soft-404 Korumalı Akıllı Web Fuzzing, Pasif Kredansiyel & API Key Sızıntı Taraması, Nmap NSE Zafiyet Eşleme ve Glassmorphism Temalı SOC Dashboard Raporlama</b> süreçlerini tek bir bağımsız ikili dosyada (zero-dependency binary) birleştirir.
 </p>
 
 ---
@@ -32,128 +33,154 @@
 
 ## 📌 İçindekiler
 
-- [🎯 1. Temel Felsefe ve Mimari İlkeler](#-1-temel-felsefe-ve-mimari-i̇lkeler)
-- [⚡ 2. Modüler Mimari ve Yetenek Matrisi](#--2-modüler-mimari-ve-yetenek-matrisi)
-- [🔄 3. Tam Otomatik Keşif Boru Hattı (Recon Pipeline)](#-3-tam-otomatik-keşif-boru-hattı-recon-pipeline)
+- [🎯 1. Temel Felsefe ve Mimari Prensipler](#-1-temel-felsefe-ve-mimari-prensipler)
+- [⚡ 2. Modüler Mimari ve Yetenek Matrisi](#-2-modüler-mimari-ve-yetenek-matrisi)
+- [🔄 3. Derinlemesine Keşif Boru Hattı (Recon Pipeline Architecture)](#-3-derinlemesine-keşif-boru-hattı-recon-pipeline-architecture)
 - [🎯 4. Tarama Profilleri (`--profile`)](#-4-tarama-profilleri---profile)
-- [🌐 5. DNS & Altyapı Güvenlik Analizi Motoru](#-5-dns--altyapı-güvenlik-analizi-motoru)
+- [🌐 5. DNS & Altyapı Güvenlik Analiz Motoru](#-5-dns--altyapı-güvenlik-analiz-motoru)
 - [🔬 6. Derin Servis & İşletim Sistemi (OS) Tespit Motoru](#-6-derin-servis--i̇şletim-sistemi-os-tespit-motoru)
-- [📂 7. Akıllı Web Fuzzing, Sızıntı Taraması & Özyinelemeli Keşif](#-7-akıllı-web-fuzzing-sızıntı-taraması--özyinelemeli-keşif)
+- [📂 7. Akıllı Web Fuzzing, Catch-All Filtresi & Sızıntı Taraması](#-7-akıllı-web-fuzzing-catch-all-filtresi--sızıntı-taraması)
 - [🛡️ 8. Port Doğrulama ve Çelişki Çözümleme Katmanı (Conflict Resolution)](#-8-port-doğrulama-ve-çelişki-çözümleme-katmanı-conflict-resolution)
-- [💻 9. İnteraktif Konsol Modu (Readline / Metasploit Style)](#-9-i̇nteraktif-konsol-modu-readline--metasploit-style)
+- [💻 9. İnteraktif Konsol Modu (Readline / REPL Interface)](#-9-i̇nteraktif-konsol-modu-readline--repl-interface)
 - [📁 10. Proje Dizin Yapısı](#-10-proje-dizin-yapısı)
-- [📥 11. Kurulum ve Derleme](#-11-kurulum-ve-derleme)
-- [🚀 12. Kapsamlı Komut Satırı Kullanım Kılavuzu (CLI Examples)](#-12-kapsamlı-komut-satırı-kullanım-kılavuzu-cli-examples)
-- [⚙️ 13. Yapılandırma (`config.yaml`)](#️-13-yapılandırma-configyaml)
+- [📥 11. İşletim Sistemlerine Göre Ayrıntılı Kurulum Kılavuzu](#-11-i̇şletim-sistemlerine-göre-ayrıntılı-kurulum-kılavuzu)
+  - [🐧 Linux (Ubuntu, Debian, Kali Linux, Parrot OS)](#-linux-ubuntu-debian-kali-linux-parrot-os)
+  - [🏹 Linux (Arch Linux, Manjaro, BlackArch)](#-linux-arch-linux-manjaro-blackarch)
+  - [🎩 Linux (Fedora, RHEL, Rocky Linux, CentOS)](#-linux-fedora-rhel-rocky-linux-centos)
+  - [🍎 macOS (Apple Silicon M1/M2/M3/M4 & Intel x86_64)](#-macos-apple-silicon-m1m2m3m4--intel-x86_64)
+  - [🪟 Windows (Windows 10, 11 & Windows Server)](#-windows-windows-10-11--windows-server)
+  - [🐳 Docker / Container ile Çalıştırma](#-docker--container-ile-çalıştırma)
+- [🚀 12. Kapsamlı Komut Satırı Kullanım Kılavuzu (CLI Reference & Examples)](#-12-kapsamlı-komut-satırı-kullanım-kılavuzu-cli-reference--examples)
+- [⚙️ 13. Yapılandırma Dosyası (`config.yaml`)](#️-13-yapılandırma-dosyası-configyaml)
 - [📊 14. SOC Raporlama ve Çıktı Formatları](#-14-soc-raporlama-ve-çıktı-formatları)
-- [⚖️ 15. Yasal Uyarı ve Lisans](#️-15-yasal-uyarı-ve-lisans)
+- [📋 15. Günlük Tutma, Denetim İzi (Audit Log) & Uyumluluk](#-15-günlük-tutma-denetim-izi-audit-log--uyumluluk)
+- [⚖️ 16. Yasal Uyarı ve Lisans](#️-16-yasal-uyarı-ve-lisans)
 
 ---
 
-## 🎯 1. Temel Felsefe ve Mimari İlkeler
+## 🎯 1. Temel Felsefe ve Mimari Prensipler
 
-Modern kurumsal ağlarda Active Directory ormanları, mikroservis mimarileri, ters vekil (reverse proxy) katmanları ve WAF/CDN altyapıları yer alır. Geleneksel araçların parça parça çalıştırılması hem bağlantı darboğazlarına hem de binlerce sahte pozitif (false-positive) sonuca yol açar.
+Geleneksel keşif süreçlerinde güvenlik uzmanları onlarca farklı aracı (amass, subfinder, nmap, masscan, httpx, ffuf, testssl, nuceli vb.) peş peşe çalıştırır. Bu durum şu kronik problemlere yol açar:
+1. **Bağlam Kopukluğu (Context Loss):** Bir aracın bulduğu bilgi (örneğin WAF varlığı veya IIS servisi) bir sonraki fuzzer aracına aktarılmaz; fuzzer körlemesine standart PHP wordlist dener.
+2. **Soket Darboğazı ve SYN-Flood Filtreleri:** Yüksek eşzamanlılıkla kontrolsüz gönderilen SYN paketleri durum bilgili (stateful) kurumsal firewall'lar tarafından engellenir ve canlı portlar "kapalı" veya "filtrelenmiş" olarak raporlanır.
+3. **Catch-All ve Yönlendirme Fırtınası (False-Positive Flood):** Hedef web sunucusu bilinmeyen tüm isteklere `302 Found ➔ /Login.aspx?ReturnUrl=...` veya `401 Unauthorized` dönüyorsa, standart fuzzer'lar binlerce sahte pozitif "Kritik Dosya Bulundu" uyarısı üretir.
 
-**SpecterRecon'un Tasarım Prensipleri:**
-1. **Sıfır Dış Bağımlılık (Zero-Dependency & Portability):** Harici araçlar (Nmap/Masscan) sistemde yüklü olmasa bile, Go'nun yerel eşzamanlı worker pool motoru ve gömülü wordlist sistemi (`//go:embed`) sayesinde hem Linux hem de Windows üzerinde tek başına eksiksiz çalışır.
-2. **Hibrit Güç:** Sistemde Masscan veya Nmap mevcutsa, Masscan'in saniyede yüzbinlerce paketlik hızından ve Nmap'in zengin NSE zafiyet script kütüphanesinden otomatik faydalanır.
-3. **Akıllı Çoklu Host Pacing & Soket Yönetimi:** Çoklu IP ve Domain Controller taramalarında hedefi kilitlememek veya TCP Reset yememek için per-host mutex kilidi ve kademeli gecikme (pacing) uygular.
-4. **Sıfır Sahte Bulgu (Zero False-Positive):** Fuzzing öncesi 3 aşamalı Catch-All ve Soft-404 baseline analizi yaparak sahte 301/302 yönlendirmelerini ayıklar.
-5. **Kimlik Doğrulamasız Derin Bilgi Toplama:** SMB2 NTLMSSP Challenge paketleri, LDAP RootDSE ASN.1 sorguları, MSSQL TDS 7.x handshake'leri ve RDP TLS müzakereleriyle hedefe oturum açmadan tam işletim sistemi build'i, Active Directory domain adı ve sunucu sertifika bilgilerini elde eder.
-6. **Pasif Sızıntı Denetimi:** Keşif sırasında sunucu yanıtlarını pasif olarak tarayarak sızan API anahtarlarını, özel anahtarları (RSA/SSH), JWT token'ları, DB bağlantı adreslerini ve framework hata/debug sayfalarını yakalar.
+**SpecterRecon'un Çözüm İlkeleri:**
+* **Sıfır Dış Bağımlılık (Zero-Dependency Architecture):** Sistemde Masscan veya Nmap olmasa dahi, Go'nun yerel Goroutine Worker Pool motoru ve gömülü wordlist'leri (`//go:embed`) sayesinde tek bir binary halinde eksiksiz çalışır.
+* **Akıllı Bağlam Aktarımı (Context-Aware Pipeline):** Port taramasında tespit edilen servisler otomatik olarak Banner Grabbing modülüne, oradan elde edilen web teknolojisi ve WAF bilgisi ise doğrudan Dizin Fuzzing ve NSE motoruna aktarılır.
+* **Status-Agnostic Catch-All Baseline Koruması:** Fuzzing öncesinde hedef sisteme 5 farklı formatta test probu gönderilir; dönen durum kodları (200, 302, 401, 403, 500), yanıt gövdesi FNV-1a snippet hash'i ve yönlendirme hedefleri kümelenerek baseline oluşturulur. Fuzzing sırasında dinamik frekans filtresi ile sahte bulgular anında elenir.
+* **Kimliksiz Derin Keşif (Unauthenticated Deep Recon):** Windows/Active Directory ormanlarında kimlik doğrulamaya gerek duymadan SMB2 NTLMSSP Challenge, LDAP RootDSE ASN.1, MSSQL TDS 7.x Pre-Login ve RDP TLS paketleri ile tam işletim sistemi build'i, AD domain adı ve sunucu sertifikaları çekilir.
+* **İki Aşamalı Doğrulama (Conflict Resolution):** Masscan ile bulunan her port native Go TCP handshake'i ile teyit edilir; firewall kaynaklı yalancı pozitifler şeffaf biçimde "Çelişkili Portlar" kategorisine ayrılır.
 
 ---
 
 ## ⚡ 2. Modüler Mimari ve Yetenek Matrisi
 
-| Modül | Yetenek Kapsamı | Tespit Edilen Zafiyet / Çıktı |
+| Modül | Protokol / Algoritma | Açıklama ve Tespit Edilen Kritik Bulgular |
 | :--- | :--- | :--- |
-| **DNS Altyapı Güvenliği** | A, AAAA, CNAME, MX, TXT, NS, SOA, Active Directory SRV, PTR | **DNS Zone Transfer (AXFR) Açığı**, **Wildcard DNS**, **Subdomain Takeover** (25+ Bulut Sağlayıcı) |
-| **Canlı Host Keşfi** | ARP, ICMP Echo, TCP SYN Ping (Milisaniye hassasiyetli gecikme ölçümü) | Ağ topolojisi, erişilebilir canlı IP listesi |
-| **Port Tarama & Doğrulama** | Native Go TCP Connect Worker Pool veya Masscan Subprocess entegrasyonu | Açık portlar, port yanıt süreleri, **Conflicting Ports (Çelişki Tespiti)** |
-| **Derin Servis Parmak İzi** | SMB2, LDAP, MSSQL, WinRM, RDP, VNC, FSSO, Redis, Postgres, MySQL, Oracle TNS, SSH, FTP, SMTP | Windows Server Build (2012R2/2016/2019/2022/2025), AD Domain/Forest, SQL Server Build, FQDN |
-| **WAF & CDN Tespiti** | Akamai (`AkamaiGHost`), Cloudflare, AWS CloudFront, Imperva, F5 BIG-IP, Sucuri | WAF arkasındaki gerçek servisler, dinamik `Host` header eşleştirmesi |
-| **Favicon MMH3 Motoru** | Shodan %100 uyumlu 32-bit MurmurHash3 hesaplaması | Spring Boot, Jenkins, Grafana, phpMyAdmin, WordPress, VMware vCenter vb. |
-| **Akıllı Web Fuzzing** | Catch-All Baseline Filtresi, SecLists Entegrasyonu, Dinamik Teknoloji Uzantı Genişletmesi | Gizli dizinler, `.env`, `.git`, `.bak`, `config.php`, `id_rsa`, robots.txt/sitemap yolları |
-| **Pasif Secret Sızıntı Taraması** | HTTP yanıt gövdelerinde Regex tabanlı hassas veri analizi | **AWS Keys (`AKIA...`)**, **Google API Key**, **GitHub PAT**, **JWT**, **RSA Private Key**, **DB Credentials** |
-| **Debug Modu Tespiti** | Web yanıtlarında framework hata ve stack trace tespiti | **Django Debug**, **Spring Whitelabel**, **Laravel Ignition/Whoops**, **PHP Stack Trace**, **ASP.NET Yellow Screen** |
-| **Özyinelemeli (Recursive) Fuzzing**| Keşfedilen kök dizinlerin (`/admin`, `/api`, `/v1`, `/portal`, `/backup`) derinleştirilmesi | Alt dizinler, gizli API endpoint'leri ve yönetim fonksiyonları |
-| **Genişletilmiş Pasif Denetim** | SSL/TLS sertifika & cipher analizi, HTTP Security Headers, CORS, GraphQL, SSH audit | Zayıf protokoller (SSLv3, TLS 1.0/1.1), eksik HSTS/CSP/X-Frame-Options, tehlikeli metotlar (`TRACE`, `PUT`) |
-| **Nmap NSE Zafiyet Eşleme** | Servis/Port bazlı otomatik Nmap NSE script çalıştırma (`config.yaml`) | **SMB EternalBlue (`MS17-010`)**, **SSL Heartbleed**, **Apache RCE**, **RDP Encryption** vb. |
-| **SOC Görsel Dashboard** | Glassmorphism temalı, filtrelemeli, responsive interaktif HTML raporu | Yönetici özeti, interaktif arama, çelişki kartları, zafiyet uyarıları |
+| **DNS Güvenlik Motoru** | DNS RFC 1035 / TCP 53 AXFR / CNAME Resolver | **DNS Zone Transfer (AXFR) Açığı**, **Wildcard DNS Tespiti**, **Subdomain Takeover (25+ Bulut Sağlayıcı)**, Active Directory SRV (`_ldap`, `_kerberos`), Ters DNS (PTR). |
+| **Canlı Host Keşfi** | ICMP Echo, ARP, TCP Probe (`TCP_OPEN` / `TCP_RST`) | Ağ topolojisi haritalama, canlı IP listesi, milisaniye hassasiyetli RTT ölçümü. |
+| **Hibrit Port Tarayıcı** | Native Go TCP Connect Worker Pool + Masscan Subprocess | 1-65535 arası yüksek hızlı TCP taraması, otomatik yedek tarama (fallback retry) ile SYN-flood engellerini aşma. |
+| **Port Teyit & Çelişki Katmanı**| İki Aşamalı TCP 3-Way Handshake Doğrulaması | Masscan ve harici araçların ürettiği sahte açık portları teyit eder; çelişkileri `Conflicting Ports` tablosunda belgeler. |
+| **SMB2/3 OS Fingerprint** | NTLMSSP Type 2 Challenge Parser | Windows Server Build (`2012 R2 / 2016 / 2019 / 2022 / 2025`), NetBIOS Bilgisayar Adı, Active Directory Domain & Forest FQDN. |
+| **LDAP RootDSE Motoru** | ASN.1 Lightweight Directory Access Protocol | AD Domain Controller Fonksiyonel Seviyesi (`FuncLevel 6=2012R2, 7=2016+`), DefaultNamingContext, Domain FQDN. |
+| **MSSQL TDS Motoru** | TDS 7.x Pre-Login Handshake Byte Stream | SQL Server ana sürümü ve tam derleme numarası (örn: `SQL Server 2022 v16.0.1000`). |
+| **WinRM / WSMAN Motoru** | SOAP Identify over HTTP/HTTPS (`/wsman`) | Windows OS Build, WS-Management protokol sürümü (`Stack 3.0`). |
+| **RDP & VNC Motoru** | X.224 Connection Request + TLS/NLA / RFB Handshake | RDP TLS Sertifika CN/FQDN bilgileri, VNC RFB Protokol sürümü (`RFB 003.008` / `005.000`). |
+| **Favicon MMH3 Motoru** | Shodan %100 Uyumlu 32-bit MurmurHash3 | Spring Boot (`116323821`), Jenkins (`81586312`), phpMyAdmin, Grafana, WordPress, VMware vCenter vb. |
+| **WAF & CDN Tespiti** | HTTP Header & Body Analizi | Akamai (`AkamaiGHost`), Cloudflare, AWS CloudFront, Imperva, F5 BIG-IP, Sucuri tespiti; dinamik Host header optimizasyonu. |
+| **Catch-All Web Fuzzing** | Multi-Probe Baseline & FNV-1a Body Snippet Hash | 302 Dynamic Query, 401 Unauthorized, 403 Forbidden, 500 Error ve 200 Soft-404 filtreleme; SecLists & Embedded wordlist. |
+| **Pasif Secret Sızıntı Taraması**| Regex Pattern Matching on HTTP Bodies | **AWS Access Key (`AKIA...`)**, **Google API Key**, **GitHub PAT**, **Slack Webhook**, **JWT**, **RSA/SSH Private Key**, **DB URI**. |
+| **Debug Sayfası Tespiti** | Framework Error Signature Matching | **Django Debug (Settings/Stack)**, **Spring Boot Whitelabel**, **Laravel Ignition (Whoops)**, **PHP Stack Trace**, **ASP.NET Yellow Screen**. |
+| **Özyinelemeli (Recursive) Fuzz**| Multi-Threaded Depth-First Fuzzing | Keşfedilen kök dizinlerin (`/admin/`, `/api/`, `/v1/`, `/portal/`, `/backup/`, `/dev/`) derinleştirilmesi. |
+| **Genişletilmiş Pasif Denetim**| TLS Cipher/Cert Suite, HTTP Security Headers, CORS, SSH | Zayıf protokoller (SSLv3, TLS 1.0/1.1), eksik HSTS/CSP/X-Frame-Options, tehlikeli metotlar (`TRACE`, `PUT`), SSH zayıf algoritmalar. |
+| **Nmap NSE Zafiyet Eşleme** | Otomatik Servis-NSE Haritalama (`config.yaml`) | **SMB EternalBlue (`MS17-010`)**, **SSL Heartbleed**, **Apache RCE**, **RDP Encryption** zafiyet taramaları. |
+| **SOC Raporlama Dashboard'u** | Glassmorphism Responsive HTML5 + JSON/TXT | İnteraktif arama, filtreleme, zafiyet kartları, çelişki tabloları, tam denetim izi (`audit.log`). |
 
 ---
 
-## 🔄 3. Tam Otomatik Keşif Boru Hattı (Recon Pipeline)
+## 🔄 3. Derinlemesine Keşif Boru Hattı (Recon Pipeline Architecture)
 
-SpecterRecon, tek bir hedef girdiğinde (Domain veya CIDR IP bloğu) aşağıdaki adımları birbirini besleyecek şekilde sırayla işletir:
+SpecterRecon, hedefe yönelik girdiyi (Domain, IP, CIDR veya dosya) adım adım işleyen tam senkronize bir boru hattına sahiptir:
 
 ```mermaid
 flowchart TD
-    A[🎯 Hedef: Domain / IP / CIDR / Import Dosyası] --> B{Girdi Türü & Parametreler}
+    Start[🎯 Hedef Girdisi: Domain / IP / CIDR / Nmap-XML / Masscan-JSON] --> Decision{Girdi Türü Nedir?}
     
-    B -->|Domain| C[Modül 0: DNS Enumeration & AXFR & Takeover Testi]
-    B -->|--nmap-xml| D[Seviye 1: Nmap XML İçe Aktarma]
-    B -->|--masscan-json| E[Seviye 1: Masscan JSON İçe Aktarma]
+    %% DNS ve İçe Aktarma
+    Decision -->|Domain| Step0[Modül 0: DNS Enumeration & Altyapı Güvenliği]
+    Decision -->|--nmap-xml| ImportNmap[Nmap XML -oX İçe Aktarma]
+    Decision -->|--masscan-json| ImportMasscan[Masscan JSON -oJ İçe Aktarma]
+    Decision -->|IP / CIDR| Step1[Adım 1: Canlı Host Keşfi - ICMP/TCP SYN]
     
-    C --> F[Adım 1: Canlı Host Keşfi - ICMP/TCP/ARP]
+    Step0 -->|AXFR / Subdomain / Wildcard / AD SRV / PTR| Step1
     
-    F --> G{Tarama Motoru Seçimi}
-    G -->|balanced / stealth| H[SpecterRecon Native Go TCP Worker Pool]
-    G -->|--use-masscan / aggressive| I[Masscan Subprocess Runner]
+    %% Port Tarama
+    Step1 --> EngineSelect{Port Tarama Motoru}
+    EngineSelect -->|balanced / stealth| NativeScan[Go Native TCP Goroutine Pool]
+    EngineSelect -->|--use-masscan / aggressive| MasscanRun[Masscan Subprocess Runner]
     
-    E --> J[Açık Port Doğrulama Katmanı - TCP Handshake]
-    I --> J
+    %% Port Teyit ve Çelişki
+    MasscanRun --> VerifyLayer[İki Aşamalı Açık Port Doğrulama]
+    ImportMasscan --> VerifyLayer
     
-    J -->|✓ Handshake Başarılı| K[Verified=true Açık Portlar]
-    J -->|❌ Handshake Başarısız| L[Conflict=true ⚠️ Çelişkili Portlar]
+    VerifyLayer -->|✓ Handshake Başarılı| VerifiedPorts[Doğrulanmış Açık Portlar]
+    VerifyLayer -->|❌ Handshake Başarısız| ConflictPorts[⚠️ Çelişkili Portlar Listesi]
     
-    H --> K
-    D --> K
+    NativeScan --> VerifiedPorts
+    ImportNmap --> VerifiedPorts
     
-    K --> M[Adım 3: Derin Servis & OS Fingerprinting]
-    M --> N[WAF & Favicon MMH3 & SMB2/LDAP/MSSQL/WinRM/RDP Probları]
+    %% Banner & Derin Fingerprint
+    VerifiedPorts --> Step3[Adım 3: Derin Servis & İşletim Sistemi Fingerprinting]
+    Step3 --> DeepProbes[SMB2 NTLMSSP + LDAP RootDSE + MSSQL TDS + WinRM + RDP + Favicon MMH3]
+    DeepProbes --> WAFDetect[WAF / CDN Tespiti & Host Header Ayarlaması]
     
-    N --> O{NSE Zafiyet Taraması? --use-nmap-nse}
-    O -->|Evet| P[Adım 3.5: config.yaml Haritalı Nmap NSE Taraması]
-    O -->|Hayır| Q[Genişletilmiş Pasif Denetim - SSL/HTTP/SSH]
-    P --> Q
+    %% NSE ve Pasif Modüller
+    WAFDetect --> NSECheck{Nmap NSE Taraması? --use-nmap-nse}
+    NSECheck -->|Evet| NSERun[Adım 3.5: config.yaml Haritalı Nmap NSE Taraması]
+    NSECheck -->|Hayır| ExtendedPassive[Genişletilmiş Pasif Denetim: SSL/TLS + HTTP Headers + CORS + SSH]
+    NSERun --> ExtendedPassive
     
-    Q --> R[Adım 4: Catch-All Filtreli & Sızıntı Taramalı Akıllı Web Fuzzing]
-    R --> R2[Özyinelemeli / Recursive Dizin Derinleştirme]
-    R2 --> S[Adım 5: Raporlama - summary.txt & report.html]
-    L --> S
+    %% Web Fuzzing
+    ExtendedPassive --> Step4[Adım 4: Akıllı Web Dizin & Dosya Fuzzing]
+    Step4 --> BaselineProbe[Status-Agnostic Catch-All Baseline & FNV-1a Hash Analizi]
+    BaselineProbe --> DynamicFuzz[Dinamik Frekans Filtreli Fuzzing & Pasif Secret Sızıntı Taraması]
+    DynamicFuzz --> RecursiveFuzz[Özyinelemeli / Recursive Dizin Derinleştirme]
+    
+    %% Raporlama
+    RecursiveFuzz --> Step5[Adım 5: Çok Formatlı SOC Raporlama]
+    ConflictPorts --> Step5
+    Step5 --> ReportOutput[report.html + summary.txt + services.json + findings.txt + audit.log]
 ```
 
 ---
 
 ## 🎯 4. Tarama Profilleri (`--profile`)
 
-Tek bir bayrakla taramanın agresiflik, hız, gizlilik ve harici araç kullanım seviyesini ayarlayabilirsiniz:
+SpecterRecon, operasyonun türüne ve ağın durumuna göre 3 temel çalışma profili sunar:
 
-| Profil | Motor | Eşzamanlılık (Worker) | İstek Gecikmesi | NSE Zafiyet Taraması | Wordlist Kapsamı | Kullanım Senaryosu |
+| Profil | Motor | Eşzamanlılık (Worker) | İstek Gecikmesi (Delay) | NSE Taraması | Wordlist Kapsamı | İdeal Kullanım Alanı |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`balanced`** *(Varsayılan)* | Go Native TCP | 50 Worker | 0 ms | Kapalı | Balanced (`common.txt` + Embedded) | Günlük taramalar, stabil ve güvenilir genel keşif. |
-| **`aggressive`** | Masscan + Go Handshake | 100+ Worker | 0 ms | **Açık** (Otomatik) | Full (`SecLists Raft` + Embedded) | Geniş IP blokları, CTF ve tam yetkili kapsamlı sızma testleri. |
-| **`stealth`** | Go Native TCP | 20 Worker | 100 ms (Adaptive) | Kapalı | Quick (Gecikmeli İstekler) | IDS/WAF alarmlarından kaçınarak yapılan sessiz keşifler. |
+| **`balanced`** *(Varsayılan)* | Go Native TCP | 50 Worker | 0 ms | Kapalı | Quick/Balanced (`common.txt` + Embedded) | Günlük kurumsal pentestler, stabil ve gürültüsüz genel keşif. |
+| **`aggressive`** | Masscan + Go Teyit | 100+ Worker | 0 ms | **Açık** (Otomatik) | Full (`SecLists Raft Medium` + Embedded) | Geniş IP blokları (/16, /24), CTF'ler ve tam yetkili kapsamlı sızma testleri. |
+| **`stealth`** | Go Native TCP | 20 Worker | 100 ms (Adaptive) | Kapalı | Quick (Gecikmeli İstekler) | SOC/SIEM alarmlarından ve IDS/IPS engellemelerinden kaçınarak yapılan sessiz keşifler. |
 
 ---
 
-## 🌐 5. DNS & Altyapı Güvenlik Analizi Motoru
+## 🌐 5. DNS & Altyapı Güvenlik Analiz Motoru
 
-SpecterRecon, hedef domain için standart çözümlemenin ötesine geçerek kritik güvenlik denetimleri gerçekleştirir:
+Domain hedeflerinde standart DNS sorgularının ötesine geçilerek altyapı güvenliği denetlenir:
 
 1. **DNS Zone Transfer (AXFR) Denetimi:**
-   - Keşfedilen tüm Name Server'lar (NS) üzerine doğrudan TCP port 53 üzerinden ham DNS AXFR paketleri gönderir.
-   - Eğer DNS sunucusunda Zone Transfer kısıtlaması yoksa, tüm alt alan adlarını ve IP adreslerini tek adımda dökerek `🚨 KRİTİK GÜVENLİK AÇIĞI` olarak alarm verir.
+   - Keşfedilen tüm Name Server'lar (NS) üzerine doğrudan TCP port 53 üzerinden ham AXFR sorguları gönderilir.
+   - Sunucuda kısıtlama yoksa tüm alt alan adları tek adımda çekilir ve `🚨 KRİTİK GÜVENLİK AÇIĞI` olarak raporlanır.
 2. **Wildcard DNS Tespiti & Sahte Subdomain Filtreleme:**
-   - Subdomain brute-force başlamadan önce `specter-recon-rnd-<uuid>.domain.com` şeklinde rastgele bir sorgu atar.
-   - Eğer alan adı tüm sorgulara sabit bir IP dönüyorsa (Wildcard DNS), bu IP adresini kaydeder ve brute-force sırasında oluşan sahte subdomain fırtınasını tamamen eler.
+   - Subdomain brute-force başlamadan önce `specter-recon-rnd-<uuid>.domain.com` şeklinde rastgele bir sorgu atılır.
+   - Eğer alan adı var olmayan tüm hostlara sabit bir IP dönüyorsa, bu IP kaydedilir ve brute-force sırasında oluşacak binlerce sahte subdomain anında elenir.
 3. **Subdomain Takeover (Alt Alan Adı Devralma) Analizi:**
-   - CNAME kayıtlarını inceleyerek 25+ popüler bulut servis sağlayıcısı ile eşleştirir:
-   - *GitHub Pages, AWS S3 / CloudFront, Heroku, Azure App Service / Traffic Manager, Ghost, Surge.sh, Shopify, Bitbucket, Pantheon, Readme.io, Zendesk, HelpScout, WPEngine, Firebase, Webflow, Vercel, Netlify.*
+   - CNAME kayıtları 25+ popüler bulut sağlayıcısının (GitHub Pages, AWS S3/CloudFront, Heroku, Azure App Service, Ghost, Surge, Shopify, Bitbucket, Pantheon, Readme.io, Zendesk, HelpScout, WPEngine, Firebase, Webflow, Vercel, Netlify vb.) hata parmak izleri ile eşleştirilerek devralınabilir subdomainler tespit edilir.
 4. **Active Directory SRV & Ters DNS (PTR) Çözümleme:**
-   - `_ldap._tcp`, `_kerberos._tcp`, `_kpasswd._tcp`, `_gc._tcp`, `_autodiscover._tcp`, `_sip._tls` sorgularıyla Active Directory Domain Controller'ları, Exchange sunucularını ve VoIP altyapılarını tespit eder.
+   - `_ldap._tcp`, `_kerberos._tcp`, `_kpasswd._tcp`, `_gc._tcp`, `_autodiscover._tcp`, `_sip._tls` kayıtları sorgulanarak ortamdaki Domain Controller, Exchange ve VoIP sunucuları keşfedilir.
 
 ---
 
@@ -162,7 +189,7 @@ SpecterRecon, hedef domain için standart çözümlemenin ötesine geçerek krit
 Körlemesine port kontrolü yerine servislere özel ikili (binary) protokol probları gönderilir:
 
 * **SMB2 NTLMSSP Fingerprint (Port 445/139):**
-  - Kimlik doğrulamaya gerek kalmadan NTLMSSP Type 2 Challenge paketinden Windows OS Major/Minor versiyonu, Build numarası (örn: `Build 9600 ➔ Windows Server 2012 R2`, `Build 17763 ➔ Windows Server 2019`, `Build 20348 ➔ Windows Server 2022`), NetBIOS Bilgisayar Adı, Active Directory Domain ve Forest bilgileri çıkarılır.
+  - Kimlik doğrulamaya gerek kalmadan NTLMSSP Type 2 Challenge paketinden Windows OS Major/Minor versiyonu, Build numarası (`Build 9600 ➔ Windows Server 2012 R2`, `Build 17763 ➔ Windows Server 2019`, `Build 20348 ➔ Windows Server 2022`, `Build 26100 ➔ Windows Server 2025`), NetBIOS Bilgisayar Adı, Active Directory Domain ve Forest bilgileri çıkarılır.
 * **LDAP Anonymous RootDSE (Port 389/636):**
   - ASN.1 formatında kimliksiz RootDSE sorgusu atılarak `domainControllerFunctionality` (Level 6 = 2012 R2, Level 7 = 2016/2019/2022/2025), Domain FQDN ve DefaultNamingContext bilgileri elde edilir.
 * **MSSQL TDS 7.x Pre-Login (Port 1433):**
@@ -182,11 +209,13 @@ Körlemesine port kontrolü yerine servislere özel ikili (binary) protokol prob
 
 ---
 
-## 📂 7. Akıllı Web Fuzzing, Sızıntı Taraması & Özyinelemeli Keşif
+## 📂 7. Akıllı Web Fuzzing, Catch-All Filtresi & Sızıntı Taraması
 
-1. **Catch-All Baseline & Soft-404 Koruması:**
-   - Fuzzing başlamadan önce `/specter-fp-check-xyz-123` gibi var olmayan 3 yol sorgulanarak baseline profili oluşturulur.
-   - Wildcard 301/302/403 yanıtları otomatik elenir; aynı (status:boyut) çifti 15 defadan fazla tekrar ederse frekans kümeleme filtresi devreye girer.
+1. **Status-Agnostic Catch-All Baseline & FNV-1a Snippet Hash Koruması:**
+   - Fuzzing başlamadan önce 5 farklı formatta test probu gönderilir (`specter-fp-check-...`, `.html`, `.aspx`, `.php`, `sub/index`).
+   - Dönen yanıtlar kümelenerek baseline oluşturulur. Status kodundan bağımsız olarak (302 Login redirect, 401 Basic auth, 403 Forbidden, 500 Server error, 200 Soft-404) aynı imzayı taşıyan yanıtlar otomatik elenir.
+   - **Dinamik Frekans Kümeleme:** Fuzzing sırasında aynı (status:boyut:hedef) kalıbı 5 defadan fazla tekrar ederse, runtime'da otomatik olarak Catch-All olarak işaretlenir ve önceki ilk 5 sahte bulgu da rapordan temizlenir.
+   - **Kesin Kural:** 301/302 yönlendirmeleri ve Catch-All 401/403 yanıtları asla `[KRİTİK DOSYA]` olarak etiketlenmez.
 2. **Pasif Secret & Kredansiyel Sızıntı Taraması (Secret Leak Scanner):**
    - Dönen 200 OK yanıtlarının gövdeleri otomatik olarak taranır:
      - 🔑 **AWS Access Key ID:** `AKIA...`
@@ -218,7 +247,7 @@ SpecterRecon bu sorunu **İki Aşamalı Doğrulama** ile çözer:
 
 ---
 
-## 💻 9. İnteraktif Konsol Modu (Readline / Metasploit Style)
+## 💻 9. İnteraktif Konsol Modu (Readline / REPL Interface)
 
 SpecterRecon hiçbir parametre verilmeden çalıştırıldığında veya `shell` komutu girildiğinde **GNU Readline tabanlı interaktif konsola** geçer:
 
@@ -247,7 +276,7 @@ specter-recon > exit
 ```
 SpecterRecon/
 ├── main.go                       # Uygulama ana giriş noktası
-├── go.mod                        # Go modül bağımlılık tanımı (Go 1.21+)
+├── go.mod                        # Go modül bağımlılık tanımı (Go 1.26+)
 ├── config.yaml                   # Tarama, zaman aşımı ve NSE script haritaları
 ├── LICENSE                       # MIT Lisansı
 ├── CONTRIBUTING.md               # Katkı ve geliştirme kuralları
@@ -287,7 +316,7 @@ SpecterRecon/
 │   ├── nmap_import.go            # Nmap XML (-oX) Ayrıştırıcı Motoru
 │   ├── masscan_import.go         # Masscan JSON (-oJ) Ayrıştırıcı Motoru
 │   ├── report.go                 # HTML Rapor oluşturucu motor
-│   └── modules_test.go           # 30 adet kapsamlı Go birim testi (%100 PASS)
+│   └── modules_test.go           # Kapsamlı Go birim testleri (%100 PASS)
 │
 ├── templates/
 │   ├── templates.go              # Gömülü HTML rapor şablonu
@@ -304,65 +333,193 @@ SpecterRecon/
 
 ---
 
-## 📥 11. Kurulum ve Derleme
+## 📥 11. İşletim Sistemlerine Göre Ayrıntılı Kurulum Kılavuzu
 
-### 1. Projeyi Klonlama ve Derleme
+SpecterRecon, Go derleyicisinin yüklü olduğu tüm işletim sistemlerinde doğrudan kaynak koddan veya tek bir komutla derlenip çalıştırılabilir.
+
+### 🐧 Linux (Ubuntu, Debian, Kali Linux, Parrot OS)
+
+#### 1. Gereksinimlerin Yüklenmesi
 ```bash
-# Repoyu klonlayın:
+sudo apt update
+sudo apt install -y git golang-go libpcap-dev
+
+# İsteğe bağlı harici hızlandırıcılar (Önerilir):
+sudo apt install -y masscan nmap
+```
+
+#### 2. Repoyu İndirme ve Derleme
+```bash
 git clone https://github.com/1Ssalih/SpecterRecon.git
 cd SpecterRecon
 
-# Bağımlılıkları indirin:
+# Bağımlılıkları kontrol et ve indir
 go mod download
 
-# Linux için derleyin ve yerel dizine yükleyin:
+# Optimize edilmiş bağımsız ikili (binary) üretimi
 go build -trimpath -ldflags="-s -w" -o specter-recon main.go
-cp -f specter-recon ~/.local/bin/specter-recon
 
-# Windows için çapraz derleme (.exe):
-GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o specter-recon.exe main.go
+# Sistem geneline taşıma
+sudo mv specter-recon /usr/local/bin/
 ```
 
-### 2. Linux Raw Socket Yetkisi (Masscan Kullanımı İçin)
-Linux üzerinde root olmadan Masscan raw socket paketleri göndermek için:
+#### 3. Root Olmadan Raw Socket / Masscan Yetkisi Verme (Linux Linux Capabilities)
 ```bash
-sudo setcap cap_net_raw,cap_net_admin=eip specter-recon
+sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service=eip /usr/local/bin/specter-recon
 ```
 
 ---
 
-## 🚀 12. Kapsamlı Komut Satırı Kullanım Kılavuzu (CLI Examples)
+### 🏹 Linux (Arch Linux, Manjaro, BlackArch)
+
+```bash
+sudo pacman -Syu --needed git go libpcap masscan nmap
+
+git clone https://github.com/1Ssalih/SpecterRecon.git
+cd SpecterRecon
+go mod download
+go build -trimpath -ldflags="-s -w" -o specter-recon main.go
+sudo install -Dm755 specter-recon /usr/local/bin/specter-recon
+sudo setcap cap_net_raw,cap_net_admin=eip /usr/local/bin/specter-recon
+```
+
+---
+
+### 🎩 Linux (Fedora, RHEL, Rocky Linux, CentOS)
+
+```bash
+sudo dnf install -y git golang libpcap-devel masscan nmap
+
+git clone https://github.com/1Ssalih/SpecterRecon.git
+cd SpecterRecon
+go mod download
+go build -trimpath -ldflags="-s -w" -o specter-recon main.go
+sudo cp specter-recon /usr/local/bin/
+sudo setcap cap_net_raw,cap_net_admin=eip /usr/local/bin/specter-recon
+```
+
+---
+
+### 🍎 macOS (Apple Silicon M1/M2/M3/M4 & Intel x86_64)
+
+#### 1. Homebrew ile Paketlerin Yüklenmesi
+```bash
+brew update
+brew install git go masscan nmap
+```
+
+#### 2. Klonlama ve Derleme
+```bash
+git clone https://github.com/1Ssalih/SpecterRecon.git
+cd SpecterRecon
+go mod download
+
+# Yerel mimari için derleme (Apple Silicon arm64 veya Intel amd64)
+go build -trimpath -ldflags="-s -w" -o specter-recon main.go
+
+# PATH dizinine kopyalama
+sudo cp specter-recon /usr/local/bin/
+```
+
+> **macOS Notu:** Masscan kullanımı macOS üzerinde `sudo` gerektirebilir:
+> `sudo specter-recon scan 192.168.1.0/24 --use-masscan --authorized`
+
+---
+
+### 🪟 Windows (Windows 10, 11 & Windows Server)
+
+#### Yöntem A: PowerShell ile Kaynak Koddan Derleme
+1. [Go Resmi Sitesi](https://go.dev/dl/)'nden Go (1.26+) kurulumunu yapın.
+2. [Npcap](https://npcap.com/)'i (WinPcap uyumluluk modu seçili olarak) kurun (Masscan/Nmap kullanımı için gereklidir).
+3. PowerShell'i açın ve çalıştırın:
+```powershell
+# Repoyu klonlayın
+git clone https://github.com/1Ssalih/SpecterRecon.git
+cd SpecterRecon
+
+# Bağımlılıkları indirin
+go mod download
+
+# Windows için .exe derleyin
+go build -trimpath -ldflags="-s -w" -o specter-recon.exe main.go
+
+# Test edin
+.\specter-recon.exe --help
+```
+
+#### Yöntem B: Linux / macOS Üzerinden Windows İçin Çapraz Derleme (Cross-Compilation)
+```bash
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o specter-recon.exe main.go
+```
+
+---
+
+### 🐳 Docker / Container ile Çalıştırma
+
+SpecterRecon'u izole bir konteynerde çalıştırmak için:
+
+```dockerfile
+# Multi-stage build Dockerfile
+FROM golang:1.26-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN apk add --no-cache git libpcap-dev gcc musl-dev
+RUN go mod download
+RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o specter-recon main.go
+
+FROM alpine:latest
+RUN apk add --no-cache libpcap nmap masscan ca-certificates
+COPY --from=builder /app/specter-recon /usr/local/bin/specter-recon
+COPY --from=builder /app/config.yaml /app/config.yaml
+WORKDIR /app
+ENTRYPOINT ["specter-recon"]
+```
+
+**Docker ile Çalıştırma:**
+```bash
+# İmajı oluşturun
+docker build -t specter-recon .
+
+# Host network yetkisi ile tarama yapın
+docker run --rm --net=host --cap-add=NET_RAW --cap-add=NET_ADMIN -v $(pwd)/output:/app/output specter-recon scan example.com --authorized
+```
+
+---
+
+## 🚀 12. Kapsamlı Komut Satırı Kullanım Kılavuzu (CLI Reference & Examples)
 
 ### 1. İnteraktif Konsol Modu (Parametresiz Çalıştırma)
 ```bash
 specter-recon
 ```
 
-### 2. Tam Boru Hattı Keşif Taraması (`scan` & `fullscan`)
+### 2. Uçtan Uca Boru Hattı Taraması (`scan` & `fullscan`)
+
 ```bash
-# Temel boru hattı taraması (DNS + Host + Port + Banner + Web Fuzzing)
+# 🎯 Standart Boru Hattı Taraması (DNS + Host + Port + Banner + Catch-All Web Fuzzing)
 specter-recon scan example.com --authorized
 
-# Subdomain brute-force ve tüm pasif denetimlerle (SSL/HTTP/SSH) tam tarama
+# 🛡️ Genişletilmiş Tam Denetim (Subdomain Brute-force + SSL/TLS + HTTP Headers + CORS + SSH Audit)
 specter-recon fullscan example.com --subdomains --authorized
 
-# Saldırgan Profil (Masscan + Nmap NSE + SecLists Full Dizin Fuzzing)
+# ⚡ Saldırgan Tarama Profili (Masscan + Nmap NSE + SecLists Raft Wordlist)
 specter-recon scan 10.0.0.0/16 --profile aggressive --authorized
 
-# Gizli / Stealth Profil (20 Worker, 100ms gecikmeli istekler)
-specter-recon scan example.com --profile stealth -d 100 --authorized
+# 🤫 Sessiz / Stealth Tarama Profili (20 Worker, 100ms adaptif gecikme)
+specter-recon scan target.local --profile stealth -d 100 --authorized
 
-# Tüm 65535 TCP portunu 200 eşzamanlı worker ile tara
+# 🔢 Tüm 65535 Portu 200 Eşzamanlı Worker İle Tara
 specter-recon scan 10.0.0.100 -p 1-65535 -t 200 --authorized
 
-# Önceden alınmış Nmap XML çıktısını içe aktarma
+# 📥 Önceden Alınmış Nmap XML Çıktısını İçe Aktarma (-oX)
 specter-recon scan --nmap-xml nmap_results.xml --authorized
 
-# Önceden alınmış Masscan JSON çıktısını içe aktarma ve TCP handshake ile doğrulama
+# 📥 Önceden Alınmış Masscan JSON Çıktısını İçe Aktarma ve TCP Handshake ile Doğrulama (-oJ)
 specter-recon scan --masscan-json masscan_out.json --authorized
 ```
 
-### 3. Bağımsız Modül Komutları
+### 3. Bağımsız Alt Modül Komutları
+
 ```bash
 # 📡 DNS Enumeration (AXFR Zone Transfer, Wildcard & Subdomain Takeover Testi)
 specter-recon dns example.com --subdomains -t 100 --authorized
@@ -380,7 +537,7 @@ specter-recon banner -i output/ports.json -o output/services.json --authorized
 specter-recon dirfuzz http://10.0.0.100:80 --service iis --authorized
 specter-recon dirfuzz https://example.com --service wordpress --wordlist-size full --authorized
 
-# 🔒 SSL/TLS Sertifika & Güvenlik Başlıkları Audit
+# 🔒 SSL/TLS Sertifika, Zayıf Cipher & Güvenlik Başlıkları Audit
 specter-recon ssl example.com:443 --authorized
 
 # 📊 Mevcut Çıktılardan HTML Dashboard Raporu Üretme
@@ -389,7 +546,7 @@ specter-recon report -t "Kurumsal Güvenlik Denetim Raporu" --authorized
 
 ---
 
-## ⚙️ 13. Yapılandırma (`config.yaml`)
+## ⚙️ 13. Yapılandırma Dosyası (`config.yaml`)
 
 `config.yaml` üzerinden Nmap NSE eşleştirmelerini, zaman aşımlarını ve fuzzer davranışını özelleştirebilirsiniz:
 
@@ -429,20 +586,32 @@ dirfuzz:
 
 ## 📊 14. SOC Raporlama ve Çıktı Formatları
 
-Tarama sonuçları `output/` dizininde otomatik oluşturulur:
+Tarama tamamlandığında `output/` klasöründe aşağıdaki dosyalar oluşturulur:
 
 1. **`output/report.html` (Görsel SOC Dashboard):** Glassmorphism CSS teması, WAF rozetleri, Nmap NSE Zafiyet Bulguları kartı, Secret Sızıntıları tablosu ve Masscan Çelişkili Portlar tablosu içeren interaktif HTML raporu.
 2. **`output/summary.txt` (Konsolide Metin Özeti):** Tüm host, port, servis, tam versiyon, güven skoru ve zafiyet özetini içeren yönetici özeti.
 3. **`output/services.json`:** Her servis için kanıt dizisi (`evidence`), güven skoru (`confidence`), WAF bilgisi ve TLS sertifika detaylarını içeren yapılandırılmış JSON verisi.
 4. **`output/findings.txt`:** Catch-All sahte bulgularından arındırılmış, durum kodları ve hassas dosya etiketleri içeren web bulguları.
 5. **`output/ip_list.json`:** DNS, SRV ve Ters DNS sorgularından elde edilen tüm doğrulanmış IP listesi.
+6. **`audit.log`:** SOC ve yasal uyumluluk için zaman damgalı tüm tarama ve komut denetim izi.
 
 ---
 
-## ⚖️ 15. Yasal Uyarı ve Lisans
+## 📋 15. Günlük Tutma, Denetim İzi (Audit Log) & Uyumluluk
+
+SpecterRecon, kurumsal sızma testleri ve ISO 27001 / SOC 2 uyumluluk süreçleri için tüm eylemleri `audit.log` dosyasına otomatik olarak yazar:
+
+```text
+2026-08-31 10:24:13 [AUDIT] ACTION=DIR_FUZZ_START TARGET="http://10.0.0.100" DETAILS="words=2500, matchTag=iis, concurrency=25" STATUS=SUCCESS
+2026-08-31 10:24:14 [AUDIT] ACTION=SECRET_LEAK_DETECTED TARGET="http://10.0.0.100/config.json" DETAILS="leaks=[AWS Access Key, JWT Token]" STATUS=ALERT
+```
+
+---
+
+## ⚖️ 16. Yasal Uyarı ve Lisans
 
 > ⚠️ **YASAL UYARI:**  
-> **SpecterRecon**, yalnızca **yasal olarak izin alınmış güvenlik denetimleri**, sızma testleri, kurum içi denetimler ve eğitim lab ortamları için geliştirilmiştir. Yetkisiz sistemlere karşı izin almadan tarama yapmak yasalara (TCK Madde 243/244, 5651 Sayılı Kanun, CFAA vb.) aykırıdır ve ağır cezai sorumluluk doğurur.  
+> **SpecterRecon**, yalnızca **yasal olarak izin alınmış güvenlik denetimleri**, sızma testleri, kurum içi altyapı kontrolleri ve eğitim lab ortamları için geliştirilmiştir. Yetkisiz sistemlere karşı izin almadan tarama yapmak yasalara (TCK Madde 243/244, 5651 Sayılı Kanun, US CFAA vb.) aykırıdır ve ağır cezai sorumluluk doğurur.  
 > Geliştirici, aracın kötüye kullanımından doğabilecek hiçbir zarardan sorumlu tutulamaz.
 
 ### Lisans

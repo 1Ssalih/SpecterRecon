@@ -423,6 +423,50 @@ func PrintHttpAuditTable(findings []HttpAuditFinding) {
 		WithData(tableData).Render()
 }
 
+// PrintSshTable displays SSH audit findings in a styled terminal table.
+func PrintSshTable(findings []SshAuditFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	tableData := pterm.TableData{
+		{"IP:Port", "SSH Banner", "Zayıf Algoritmalar", "Şifre Girişi", "Şiddet"},
+	}
+	for _, f := range findings {
+		banner := f.Banner
+		if len(banner) > 35 {
+			banner = banner[:32] + "..."
+		}
+		if banner == "" {
+			banner = "-"
+		}
+
+		weak := strings.Join(f.WeakAlgorithms, ", ")
+		if len(weak) > 30 {
+			weak = weak[:27] + "..."
+		}
+		if weak == "" {
+			weak = "-"
+		}
+
+		pwAuth := "Evet"
+		if !f.PasswordAuthOn {
+			pwAuth = "Hayır"
+		}
+
+		tableData = append(tableData, []string{
+			fmt.Sprintf("%s:%d", f.IP, f.Port),
+			banner,
+			weak,
+			pwAuth,
+			f.Severity,
+		})
+	}
+	pterm.Println()
+	_ = pterm.DefaultTable.WithHasHeader().WithBoxed().WithHeaderStyle(pterm.NewStyle(pterm.FgYellow, pterm.Bold)).
+		WithData(tableData).Render()
+}
+
+
 // PrintNSETable displays Nmap Scripting Engine vulnerability/audit findings.
 func PrintNSETable(findings []NSEFinding) {
 	if len(findings) == 0 {

@@ -175,24 +175,34 @@ func SystemICMPPing(ip string, timeout time.Duration) *float64 {
 	return nil
 }
 
-// AsyncTCPPing tests if a host is alive by connecting to a common port.
-// Returns latency and whether the port was actually open (true) or actively refused via RST (false).
-func AsyncTCPPing(ip string, port int, timeout time.Duration) (*float64, bool) {
+// TCPProbe attempts a TCP connection to an ip:port with the given timeout.
+// It returns latency in ms, whether the port was open (true) or actively refused via RST (false), and the raw error if any.
+func TCPProbe(ip string, port int, timeout time.Duration) (*float64, bool, error) {
 	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	dialer := &net.Dialer{
+		Timeout: timeout,
+	}
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", addr, timeout)
+	conn, err := dialer.Dial("tcp", addr)
 	if err != nil {
-		// If connection was refused actively (RST), host is definitely alive!
-		if strings.Contains(err.Error(), "refused") {
+		if strings.Contains(err.Error(), "refused") || strings.Contains(err.Error(), "RST") || strings.Contains(err.Error(), "reset") {
 			lat := float64(time.Since(start).Nanoseconds()) / 1e6
-			return &lat, false
+			return &lat, false, err
 		}
-		return nil, false
+		return nil, false, err
 	}
 	_ = conn.Close()
 	lat := float64(time.Since(start).Nanoseconds()) / 1e6
-	return &lat, true
+	return &lat, true, nil
 }
+
+// AsyncTCPPing tests if a host is alive by connecting to a common port.
+// Returns latency and whether the port was actually open (true) or actively refused via RST (false).
+func AsyncTCPPing(ip string, port int, timeout time.Duration) (*float64, bool) {
+	lat, isOpen, _ := TCPProbe(ip, port, timeout)
+	return lat, isOpen
+}
+
 
 // ProbeSingleHost probes a host via ICMP and common TCP ports.
 func ProbeSingleHost(ip string, commonPorts []int, timeout time.Duration, arpMap map[string]string) *core.HostInfo {

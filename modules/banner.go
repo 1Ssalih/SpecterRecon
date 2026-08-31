@@ -1070,10 +1070,12 @@ func GrabBannersAndServices(ports []core.PortInfo, concurrency int, timeout time
 
 	if outputFile != "" {
 		_ = core.SaveServices(services, outputFile)
+		core.LogInfo("Servis Tespiti tamamlandı: %d servis kaydedildi (%s).", len(services), outputFile)
+	} else {
+		core.LogInfo("Servis Tespiti tamamlandı: %d servis tespit edildi.", len(services))
 	}
-
-	core.LogInfo("Servis Tespiti tamamlandı: %d servis kaydedildi (%s).", len(services), outputFile)
 	core.LogAudit("SERVICE_DETECTION_COMPLETE", "all", fmt.Sprintf("services=%d", len(services)), "SUCCESS")
+
 
 	return services, nil
 }
