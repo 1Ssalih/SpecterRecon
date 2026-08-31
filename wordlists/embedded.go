@@ -56,8 +56,12 @@ var SubdomainsTxt string
 //go:embed wordpress.txt
 var WordpressTxt string
 
+//go:embed exchange.txt
+var ExchangeTxt string
+
 //go:embed service_wordlist_map.yaml
 var ServiceWordlistMapYAML string
+
 
 // ParseWordlistString parses a raw newline-delimited wordlist string into cleaned words.
 func ParseWordlistString(content string) []string {
@@ -108,9 +112,12 @@ func GetEmbeddedWordlist(path string) ([]string, bool) {
 		return ParseWordlistString(SubdomainsTxt), true
 	case strings.Contains(base, "wordpress"):
 		return ParseWordlistString(WordpressTxt), true
+	case strings.Contains(base, "exchange"):
+		return ParseWordlistString(ExchangeTxt), true
 	case strings.Contains(base, "common") || strings.Contains(base, "raft"):
 		return ParseWordlistString(CommonTxt), true
 	default:
 		return ParseWordlistString(CommonTxt), false
 	}
 }
+

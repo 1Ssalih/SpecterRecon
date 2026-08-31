@@ -3,10 +3,12 @@ package modules
 import (
 	"bufio"
 	"context"
+	"crypto/md5"
 	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
+
 	"net/url"
 	"os"
 	"path/filepath"
@@ -164,12 +166,12 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 	))
 
 	// Tiered Priority System:
-	// Tier 1: High-Value Applications (CMS, CI/CD, DevOps Dashboards)
+	// Tier 1: High-Value Applications (Exchange, CMS, CI/CD, DevOps Dashboards)
 	// Tier 2: Frameworks & APIs (Spring Boot, Django, Rails, ASP.NET, PHP, Swagger, APIs, Next.js)
 	// Tier 3: Dedicated Services (Elasticsearch, Kibana)
 	// Tier 4: Underlying Web Servers / Infrastructure (Tomcat, IIS, Apache, Nginx, Lighttpd, Werkzeug)
 	tiers := [][]string{
-		{"jenkins", "gitlab", "grafana", "wordpress", "drupal", "joomla", "sharepoint"},
+		{"exchange", "jenkins", "gitlab", "grafana", "wordpress", "drupal", "joomla", "sharepoint"},
 		{"springboot", "django", "rails", "aspnet", "php", "swagger", "api", "nextjs"},
 		{"elasticsearch"},
 		{"tomcat", "iis", "apache", "nginx", "lighttpd", "werkzeug"},
@@ -177,6 +179,8 @@ func SelectWordlistForService(svc core.ServiceDetail, wordlistMap map[string]str
 
 	matchFoundInHaystack := func(key string) bool {
 		switch key {
+		case "exchange":
+			return strings.Contains(haystack, "exchange") || strings.Contains(haystack, "owa") || strings.Contains(haystack, "outlook web") || strings.Contains(haystack, "autodiscover")
 		case "springboot":
 			return strings.Contains(haystack, "springboot") || strings.Contains(haystack, "spring-boot") || strings.Contains(haystack, "spring") || strings.Contains(haystack, "whitelabel error page") || strings.Contains(haystack, "x-application-context")
 		case "aspnet":
@@ -278,43 +282,216 @@ func GenerateTechnologyExtensionVariants(words []string, matchedTech string) []s
 	isIISorAspNet := strings.Contains(matchedTechLower, "iis") || strings.Contains(matchedTechLower, "aspnet") || strings.Contains(matchedTechLower, "microsoft")
 	isPHP := strings.Contains(matchedTechLower, "php") || strings.Contains(matchedTechLower, "wordpress") || strings.Contains(matchedTechLower, "drupal") || strings.Contains(matchedTechLower, "joomla")
 	isJava := strings.Contains(matchedTechLower, "tomcat") || strings.Contains(matchedTechLower, "springboot") || strings.Contains(matchedTechLower, "java")
+	isExchange := strings.Contains(matchedTechLower, "exchange")
 
-	// High-interest root names for mutation
 	targetRoots := []string{
 		"index", "default", "login", "admin", "api", "auth", "portal", "dashboard",
 		"test", "web", "config", "manage", "app", "service", "account", "user", "info",
 	}
 
 	if isIISorAspNet {
+		// Mevcut uzantılar
 		aspExts := []string{".aspx", ".asp", ".axd", ".ashx", ".asmx", ".config"}
 		for _, root := range targetRoots {
 			for _, ext := range aspExts {
 				extraVariants = append(extraVariants, root+ext)
 			}
 		}
-		extraVariants = append(extraVariants, "web.config", "global.asax", "elmah.axd", "trace.axd", "appsettings.json")
+
+		// ============================================================
+		// YENİ: IIS Critical Paths — Hassas ve yüksek değerli endpoint'ler
+		// ============================================================
+
+		// 1. ASP.NET Debug/Tracing Handlers
+		iisDebugPaths := []string{
+			"elmah.axd",
+			"trace.axd",
+			"WebResource.axd",
+			"ScriptResource.axd",
+			"eWebEditor.axd",
+			"Telerik.Web.UI.WebResource.axd",
+			"Telerik.Web.UI.DialogHandler.aspx",
+			"Telerik.Web.UI.SpellCheckHandler.axd",
+		}
+		extraVariants = append(extraVariants, iisDebugPaths...)
+
+		// 2. Configuration Files
+		iisConfigPaths := []string{
+			"web.config",
+			"web.config.bak",
+			"web.config.old",
+			"web.config.save",
+			"web.config~",
+			"web.config.txt",
+			"web.config.xml",
+			"web.config.swp",
+			"machine.config",
+			"Global.asax",
+			"Global.asax.cs",
+			"Global.asax.vb",
+			"appsettings.json",
+			"appsettings.Development.json",
+			"appsettings.Production.json",
+			"packages.config",
+			"nuget.config",
+			"web.Debug.config",
+			"web.Release.config",
+		}
+		extraVariants = append(extraVariants, iisConfigPaths...)
+
+		// 3. SharePoint Paths (often co-hosted on IIS)
+		sharePointPaths := []string{
+			"_layouts/",
+			"_layouts/15/",
+			"_layouts/15/settings.aspx",
+			"_layouts/15/viewlsts.aspx",
+			"_vti_bin/",
+			"_vti_bin/shtml.dll",
+			"_vti_bin/_vti_adm/admin.dll",
+			"_vti_bin/_vti_aut/author.dll",
+			"_vti_inf.html",
+			"_catalogs/",
+			"_catalogs/masterpage/",
+			"_catalogs/wp/",
+			"_catalogs/wt/",
+			"SitePages/",
+			"SiteAssets/",
+			"Style Library/",
+		}
+		extraVariants = append(extraVariants, sharePointPaths...)
+
+		// 4. ASP.NET MVC/API Endpoints
+		iisAPIPaths := []string{
+			"api/",
+			"api/values",
+			"api/health",
+			"api/status",
+			"api/v1/",
+			"api/v2/",
+			"swagger/",
+			"swagger/ui/",
+			"swagger/v1/swagger.json",
+			"swagger/v2/swagger.json",
+			"help/",
+			"help/api/",
+			"signalr/hubs",
+			"odata/",
+			"hangfire/",
+			"Elmah",
+			"elmah",
+		}
+		extraVariants = append(extraVariants, iisAPIPaths...)
+
+		// 5. IIS Default/Management Files
+		iisDefaultPaths := []string{
+			"iisstart.htm",
+			"iis-85.png",
+			"iisstart.png",
+			"aspnet_client/",
+			"aspnet_client/system_web/",
+			"aspnet_client/system_web/4_0_30319/",
+		}
+		extraVariants = append(extraVariants, iisDefaultPaths...)
+
+		// 6. IIS Virtual Directories (common)
+		iisVirtualDirs := []string{
+			"certsrv/",
+			"certenroll/",
+			"Rpc/",
+			"RpcProxy/",
+			"MSADC/",
+			"IISADMPWD/",
+			"scripts/",
+			"_vti_pvt/",
+			"_private/",
+			"fpdb/",
+			"_fpclass/",
+		}
+		extraVariants = append(extraVariants, iisVirtualDirs...)
+
+		// 7. Backup & Source Disclosure
+		iisBackupPaths := []string{
+			"web.config.bak",
+			"web.config.old",
+			"web.config.orig",
+			"web.config.save",
+			"web.config.txt",
+			"web.config~",
+			"Default.aspx.cs",
+			"Default.aspx.vb",
+			"Default.aspx.designer.cs",
+			"bin/",
+			"App_Data/",
+			"App_Code/",
+			"Logs/",
+			"logs/",
+			"ErrorPages/",
+			"Errors/",
+		}
+		extraVariants = append(extraVariants, iisBackupPaths...)
+
+		// 8. Telerik Vulnerability Paths (CVE-2017-9248, CVE-2019-18935)
+		telerikPaths := []string{
+			"Telerik.Web.UI.WebResource.axd?type=rau",
+			"Telerik.Web.UI.DialogHandler.aspx",
+			"Telerik.Web.UI.SpellCheckHandler.axd",
+			"Telerik.Web.UI.ChartImage.axd",
+		}
+		extraVariants = append(extraVariants, telerikPaths...)
 	}
 
 	if isPHP {
-		phpExts := []string{".php", ".phtml", ".php.bak", ".inc"}
+		phpExts := []string{".php", ".phtml", ".php.bak", ".php~", ".php.old", ".inc", ".phps", ".php5", ".php7"}
 		for _, root := range targetRoots {
 			for _, ext := range phpExts {
 				extraVariants = append(extraVariants, root+ext)
 			}
 		}
-		extraVariants = append(extraVariants, "config.php", "wp-config.php", "phpinfo.php", "database.php")
+		extraVariants = append(extraVariants,
+			"config.php", "wp-config.php", "phpinfo.php", "database.php",
+			"configuration.php", "settings.php", "db.php", "conn.php",
+			"connect.php", "include.php", "functions.php", "init.php",
+			".env", ".htaccess", ".htpasswd", "composer.json", "composer.lock",
+			"vendor/", "vendor/autoload.php",
+		)
 	}
 
 	if isJava {
 		javaPaths := []string{
-			"actuator", "actuator/health", "actuator/env", "actuator/beans", "actuator/metrics",
-			"swagger-ui.html", "v2/api-docs", "v3/api-docs", "manager/html", "host-manager/html",
+			"actuator", "actuator/", "actuator/health", "actuator/env", "actuator/beans",
+			"actuator/metrics", "actuator/conditions", "actuator/configprops",
+			"actuator/mappings", "actuator/info", "actuator/loggers",
+			"actuator/threaddump", "actuator/httptrace", "actuator/heapdump",
+			"actuator/jolokia", "actuator/auditevents", "actuator/flyway",
+			"actuator/liquibase", "actuator/prometheus", "actuator/scheduledtasks",
+			"actuator/sessions", "actuator/shutdown",
+			"swagger-ui.html", "swagger-ui/", "v2/api-docs", "v3/api-docs",
+			"swagger-resources", "webjars/",
+			"manager/html", "manager/status", "host-manager/html",
+			"jmx-console/", "web-console/", "invoker/JMXInvokerServlet",
+			"h2-console/", "console/", "debug/",
 		}
 		extraVariants = append(extraVariants, javaPaths...)
 	}
 
+	if isExchange {
+		exchangeExtra := []string{
+			"owa/auth/logon.aspx",
+			"owa/auth/logoff.aspx",
+			"EWS/Exchange.asmx",
+			"Autodiscover/Autodiscover.xml",
+			"ecp/default.aspx",
+			"Microsoft-Server-ActiveSync",
+			"PowerShell",
+			"OAB",
+			"mapi/emsmdb/",
+		}
+		extraVariants = append(extraVariants, exchangeExtra...)
+	}
+
 	return MergeUnique(words, extraVariants)
 }
+
 
 // AuditHTTPMethods sends an OPTIONS request to extract Allow / Public headers and highlight dangerous methods (TRACE, PUT, DELETE).
 func AuditHTTPMethods(client *http.Client, baseURL string, targetHost string) []string {
@@ -465,6 +642,7 @@ type BaselineSignature struct {
 	RedirectLocation string
 	Title            string
 	BodySnippetHash  uint32
+	BodyHash         string
 }
 
 // BaselineResponse holds characteristics of non-existent path responses for Catch-All / Wildcard detection.
@@ -477,6 +655,15 @@ type BaselineResponse struct {
 	RedirectLocation string
 	Title            string
 	BodySnippetHash  uint32
+	BodyHash         string
+}
+
+func computeMD5Hash(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	h := md5.Sum(body)
+	return fmt.Sprintf("%x", h)
 }
 
 func computeBodySnippetHash(body []byte) uint32 {
@@ -524,7 +711,8 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 		length     int64
 		location   string
 		title      string
-		bodyHash   uint32
+		bodyHash   string
+		snippetH   uint32
 	}
 
 	var results []probeResp
@@ -538,7 +726,7 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 		if targetHost != "" {
 			req.Host = targetHost
 		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.8.0")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.9.0")
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -559,7 +747,8 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 			length:     int64(len(bodyBytes)),
 			location:   resp.Header.Get("Location"),
 			title:      title,
-			bodyHash:   computeBodySnippetHash(bodyBytes),
+			bodyHash:   computeMD5Hash(bodyBytes),
+			snippetH:   computeBodySnippetHash(bodyBytes),
 		})
 	}
 
@@ -575,7 +764,8 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 		lengths  []int64
 		location string
 		title    string
-		bodyHash uint32
+		bodyHash string
+		snippetH uint32
 		count    int
 	}
 
@@ -595,7 +785,7 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 				isRedirectMatch := (r.statusCode >= 300 && r.statusCode < 400) &&
 					(cBaseLoc == rBaseLoc || (cBaseLoc != "" && rBaseLoc != "" && strings.TrimRight(cBaseLoc, "/") == strings.TrimRight(rBaseLoc, "/")))
 
-				isBodyMatch := diff <= 60 || (clusters[i].bodyHash != 0 && clusters[i].bodyHash == r.bodyHash) || (clusters[i].title != "" && clusters[i].title == r.title)
+				isBodyMatch := (clusters[i].bodyHash != "" && clusters[i].bodyHash == r.bodyHash) || diff <= 50 || (clusters[i].snippetH != 0 && clusters[i].snippetH == r.snippetH) || (clusters[i].title != "" && clusters[i].title == r.title)
 
 				if isRedirectMatch || isBodyMatch {
 					clusters[i].lengths = append(clusters[i].lengths, r.length)
@@ -613,6 +803,7 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 				location: r.location,
 				title:    r.title,
 				bodyHash: r.bodyHash,
+				snippetH: r.snippetH,
 				count:    1,
 			})
 		}
@@ -633,7 +824,8 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 				ContentLength:    avgLen,
 				RedirectLocation: c.location,
 				Title:            c.title,
-				BodySnippetHash:  c.bodyHash,
+				BodySnippetHash:  c.snippetH,
+				BodyHash:         c.bodyHash,
 			}
 			detectedSigs = append(detectedSigs, sig)
 
@@ -642,8 +834,8 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 			if baseLoc != "" {
 				destHint = fmt.Sprintf(" ➔ %s", baseLoc)
 			}
-			core.LogWarning("Catch-All / Wildcard Yanıtı Tespit Edildi: Hedef bilinmeyen tüm yollara [%d] (~%dB%s) dönüyor. Sahte bulgular otomatik filtrelenecektir.",
-				c.status, avgLen, destHint)
+			core.LogWarning("Catch-All / Wildcard Yanıtı Tespit Edildi: Hedef bilinmeyen tüm yollara [%d] (~%dB%s, hash: %s) dönüyor. Sahte bulgular otomatik filtrelenecektir.",
+				c.status, avgLen, destHint, c.bodyHash)
 		}
 	}
 
@@ -657,11 +849,13 @@ func DetectBaselineResponse(client *http.Client, baseURL string, targetHost stri
 			RedirectLocation: primary.RedirectLocation,
 			Title:            primary.Title,
 			BodySnippetHash:  primary.BodySnippetHash,
+			BodyHash:         primary.BodyHash,
 		}
 	}
 
 	return BaselineResponse{}
 }
+
 
 var (
 	regexAWSAccessKey = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
@@ -737,7 +931,7 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 	if targetHost != "" {
 		req.Host = targetHost
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.8.0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.9.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -757,6 +951,7 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 		bodyStr := string(bodyBytes)
 		contentLen := int64(len(bodyBytes))
 		bodyHash := computeBodySnippetHash(bodyBytes)
+		bHash := computeMD5Hash(bodyBytes)
 
 		var title string
 		if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
@@ -808,6 +1003,7 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 					RedirectLocation: baseline.RedirectLocation,
 					Title:            baseline.Title,
 					BodySnippetHash:  baseline.BodySnippetHash,
+					BodyHash:         baseline.BodyHash,
 				}}
 			}
 
@@ -823,7 +1019,16 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 					isRedirectMatch := (resp.StatusCode >= 300 && resp.StatusCode < 400) &&
 						sigBaseLoc != "" && (baseLoc == sigBaseLoc || strings.TrimRight(baseLoc, "/") == strings.TrimRight(sigBaseLoc, "/"))
 
-					isBodyMatch := diff <= 60 || (sig.BodySnippetHash != 0 && bodyHash == sig.BodySnippetHash) || (sig.Title != "" && title == sig.Title)
+					// Hash match or tight size match
+					isBodyMatch := (sig.BodyHash != "" && bHash != "" && sig.BodyHash == bHash) ||
+						(diff <= 50 && (sig.Title == "" || sig.Title == title || (sig.BodySnippetHash != 0 && bodyHash == sig.BodySnippetHash)))
+
+					// SPECIAL RULE FOR 403 / 401: If body hash is DIFFERENT and size differs by > 50, do NOT suppress!
+					if resp.StatusCode == 403 || resp.StatusCode == 401 {
+						if sig.BodyHash != "" && bHash != "" && sig.BodyHash != bHash && diff > 50 {
+							isBodyMatch = false
+						}
+					}
 
 					if isRedirectMatch || isBodyMatch {
 						// Only allow 200 OK responses through if they contain genuine secret leaks or distinct debug output
@@ -896,6 +1101,133 @@ func FuzzSingleURL(client *http.Client, baseURL, path, matchTag string, statusFi
 	return nil
 }
 
+// FuzzSingleURLWithRobotsBypass tests paths extracted from robots.txt with looser filter so catch-all won't easily suppress them.
+func FuzzSingleURLWithRobotsBypass(client *http.Client, baseURL, path string, limiter *rate.Limiter, baseline BaselineResponse, targetHost string, defaultMethods []string) *core.DirFuzzFinding {
+	if limiter != nil {
+		_ = limiter.Wait(context.Background())
+	}
+
+	cleanPath := strings.TrimPrefix(path, "/")
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), cleanPath)
+	start := time.Now()
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil
+	}
+	if targetHost != "" {
+		req.Host = targetHost
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SpecterRecon/0.9.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return nil
+	}
+
+	latency := float64(time.Since(start).Nanoseconds()) / 1e6
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 32768))
+	bodyStr := string(bodyBytes)
+	contentLen := int64(len(bodyBytes))
+	bHash := computeMD5Hash(bodyBytes)
+
+	var title string
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		re := regexp.MustCompile(`(?i)<title[^>]*>(.*?)</title>`)
+		matches := re.FindStringSubmatch(bodyStr)
+		if len(matches) > 1 {
+			title = strings.TrimSpace(matches[1])
+			if len(title) > 60 {
+				title = title[:57] + "..."
+			}
+		}
+	}
+
+	location := resp.Header.Get("Location")
+	isSensitive := isSensitivePath(path)
+
+	leaks := ScanBodyForSecrets(bodyStr)
+	debugMode := CheckDebugModeExposure(bodyStr)
+
+	if len(leaks) > 0 {
+		isSensitive = true
+		leakTag := fmt.Sprintf("[SIZINTI: %s]", strings.Join(leaks, ", "))
+		if title == "" {
+			title = leakTag
+		} else {
+			title = title + " " + leakTag
+		}
+	}
+
+	if debugMode != "" {
+		isSensitive = true
+		if title == "" {
+			title = "[" + debugMode + "]"
+		} else {
+			title = title + " [" + debugMode + "]"
+		}
+	}
+
+	// Catch-All bypass check: only suppress if status code AND body hash match baseline exactly
+	if baseline.IsCatchAll {
+		sigsToCheck := baseline.Signatures
+		if len(sigsToCheck) == 0 {
+			sigsToCheck = []BaselineSignature{{
+				StatusCode:       baseline.StatusCode,
+				ContentLength:    baseline.ContentLength,
+				RedirectLocation: baseline.RedirectLocation,
+				Title:            baseline.Title,
+				BodyHash:         baseline.BodyHash,
+			}}
+		}
+
+		for _, sig := range sigsToCheck {
+			if resp.StatusCode == sig.StatusCode {
+				if sig.BodyHash != "" && bHash != "" && sig.BodyHash == bHash {
+					return nil
+				}
+				diff := contentLen - sig.ContentLength
+				if diff < 0 {
+					diff = -diff
+				}
+				if diff == 0 && (sig.Title == "" || sig.Title == title) {
+					return nil
+				}
+			}
+		}
+	}
+
+	var allowedMethods []string
+	if allowHdr := resp.Header.Get("Allow"); allowHdr != "" {
+		for _, m := range strings.Split(allowHdr, ",") {
+			if mClean := strings.ToUpper(strings.TrimSpace(m)); mClean != "" {
+				allowedMethods = append(allowedMethods, mClean)
+			}
+		}
+	} else {
+		allowedMethods = defaultMethods
+	}
+
+	return &core.DirFuzzFinding{
+		URL:              url,
+		Path:             "/" + cleanPath,
+		StatusCode:       resp.StatusCode,
+		ContentLength:    contentLen,
+		RedirectLocation: location,
+		Title:            title,
+		ResponseTimeMs:   &latency,
+		IsSensitive:      isSensitive,
+		WordlistMatched:  "robots.txt",
+		MatchedTech:      "robots.txt",
+		AllowedMethods:   allowedMethods,
+	}
+}
+
 // FuzzTargetService runs concurrent directory fuzzing against a single base URL with token bucket rate limiting.
 func FuzzTargetService(baseURL string, wordlist []string, matchTag string, concurrency int, delayMs int) []core.DirFuzzFinding {
 	return FuzzTargetServiceWithHost(baseURL, "", wordlist, matchTag, concurrency, delayMs)
@@ -965,6 +1297,21 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 		return nil
 	}
 
+	// 4.1 Dedicated Robots.txt Bypass Scan
+	var findings []core.DirFuzzFinding
+	var mu sync.Mutex
+	seenPathsMap := make(map[string]bool)
+
+	if len(robotsPaths) > 0 {
+		for _, rp := range robotsPaths {
+			if rRes := FuzzSingleURLWithRobotsBypass(client, baseURL, rp, limiter, baseline, targetHost, rootAllowedMethods); rRes != nil {
+				findings = append(findings, *rRes)
+				seenPathsMap[rRes.Path] = true
+				core.LogSuccess("robots.txt Yolu Doğrulandı: [%d] %s (Boyut: %dB)", rRes.StatusCode, rRes.URL, rRes.ContentLength)
+			}
+		}
+	}
+
 	wordChan := make(chan string, totalWords)
 	for _, w := range enrichedWordlist {
 		wordChan <- w
@@ -973,8 +1320,6 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 
 	var (
 		wg               sync.WaitGroup
-		mu               sync.Mutex
-		findings         []core.DirFuzzFinding
 		processedCount   int64
 		startTime        = time.Now()
 		sizeFrequencyMap = make(map[string]int)
@@ -996,6 +1341,11 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 					freqKey := fmt.Sprintf("%d:%d:%s", res.StatusCode, sizeBucket, rBaseLoc)
 
 					mu.Lock()
+					if seenPathsMap[res.Path] {
+						mu.Unlock()
+						continue
+					}
+
 					sizeFrequencyMap[freqKey]++
 					count := sizeFrequencyMap[freqKey]
 
@@ -1018,6 +1368,7 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 						continue // Suppress repetitive wildcard / catch-all flood
 					}
 
+					seenPathsMap[res.Path] = true
 					findings = append(findings, *res)
 					mu.Unlock()
 
@@ -1061,6 +1412,8 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 		"admin": true, "api": true, "v1": true, "v2": true, "portal": true, "dev": true,
 		"app": true, "backup": true, "manage": true, "dashboard": true, "internal": true,
 		"private": true, "secure": true, "panel": true, "auth": true, "ws": true, "rest": true,
+		"owa": true, "ecp": true, "ews": true, "autodiscover": true, "elmah": true,
+		"swagger": true, "actuator": true, "_layouts": true, "aspnet_client": true, "certsrv": true, "rpc": true,
 	}
 
 	var recursiveDirs []string
@@ -1112,6 +1465,7 @@ func FuzzTargetServiceWithHost(baseURL string, targetHost string, wordlist []str
 
 	return findings
 }
+
 
 // RunDirFuzzing orchestrates directory fuzzing across all open HTTP/HTTPS services with smart multi-list unioning.
 func RunDirFuzzing(services []core.ServiceDetail, wordlistSizeMode string, defaultWordlist, sensitivePath string, concurrency int, delayMs int, outputJSON, outputTxt string) ([]core.DirFuzzFinding, error) {

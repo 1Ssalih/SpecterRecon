@@ -594,7 +594,13 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration, ho
 				if strings.Contains(cvLower, "_gitlab_session") {
 					addTech("gitlab")
 				}
+				if strings.Contains(cvLower, "owa") || strings.Contains(cvLower, "exchange") || strings.Contains(cvLower, "x-owa") {
+					addTech("exchange")
+				}
 			}
+		}
+		if kLower == "x-owa-version" || kLower == "x-diaginfo" {
+			addTech("exchange")
 		}
 	}
 	if serverHeader == "" && len(allHeaders) > 0 {
@@ -626,9 +632,23 @@ func ProbeHTTPService(ip string, port int, isSSL bool, timeout time.Duration, ho
 		if strings.Contains(tLower, "spring") {
 			addTech("springboot")
 		}
+		if strings.Contains(tLower, "outlook") || strings.Contains(tLower, "exchange") || strings.Contains(tLower, "owa") || strings.Contains(tLower, "sign in - microsoft exchange") {
+			addTech("exchange")
+		}
 	}
 
 	bodyLower := strings.ToLower(bodyStr)
+
+	// Exchange OWA Detection in body
+	if strings.Contains(bodyLower, "owa/") ||
+		strings.Contains(bodyLower, "logon.aspx") ||
+		strings.Contains(bodyLower, "microsoft exchange") ||
+		strings.Contains(bodyLower, "outlook web") ||
+		strings.Contains(bodyLower, "owaauth") ||
+		strings.Contains(bodyLower, "/owa/auth/") {
+		addTech("exchange")
+	}
+
 
 	// 1. Meta Generator regex
 	metaGenRegex := regexp.MustCompile(`(?i)<meta\s+[^>]*name=["']generator["'][^>]*content=["']([^"']+)["']`)

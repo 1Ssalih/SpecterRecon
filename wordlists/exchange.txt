@@ -1,0 +1,107 @@
+# Microsoft Exchange Server Paths
+# OWA (Outlook Web Access)
+owa
+owa/auth/logon.aspx
+owa/auth/logoff.aspx
+owa/auth/login.aspx
+owa/auth/logout.aspx
+owa/auth/
+owa/
+OWA/
+
+# Exchange Web Services
+EWS
+EWS/Exchange.asmx
+EWS/services.wsdl
+EWS/exchange.asmx
+ews
+ews/exchange.asmx
+
+# Autodiscover
+Autodiscover
+Autodiscover/Autodiscover.xml
+autodiscover
+autodiscover/autodiscover.xml
+autodiscover/autodiscover.svc
+AutoDiscover
+
+# Exchange Control Panel (ECP)
+ecp
+ecp/
+ecp/default.aspx
+ecp/PersonalSettings/
+ecp/UsersGroups/
+
+# Exchange Management
+mapi
+mapi/
+mapi/emsmdb/
+Microsoft-Server-ActiveSync
+Microsoft-Server-ActiveSync/
+
+# PowerShell
+PowerShell
+PowerShell/
+powershell
+
+# Offline Address Book
+OAB
+OAB/
+
+# Public Folders
+public
+Public
+Public/
+
+# Certificate Services (often on Exchange servers)
+certsrv
+certsrv/
+certenroll
+certenroll/
+
+# Exchange Legacy
+exchange
+Exchange
+exchweb
+Exchweb
+exchweb/bin/auth/owaauth.dll
+
+# RPC Proxy
+Rpc
+Rpc/
+RpcProxy
+RpcProxy/
+
+# Unified Messaging
+um
+um/
+
+# Exchange Admin Center (newer versions)
+ecp/UsersGroups/
+ecp/RulesEditor/
+ecp/MyAccount/
+ecp/Help/
+
+# Exchange 2016/2019/2022 specific
+mapi/emsmdb/
+mapi/nspi/
+microsoft-server-activesync
+Microsoft-Server-ActiveSync
+
+# Autodiscover v2
+autodiscover/autodiscover.json
+Autodiscover/Autodiscover.json
+autodiscover/v1.0/
+autodiscover.svc
+
+# Hybrid/Modern Auth
+identity
+oauth2
+oauth2/v2.0/
+common/oauth2/
+
+# Diagnostic/Test endpoints
+ews/Services.wsdl
+ews/messages.asmx
+ews/contacts.asmx
+ews/calendar.asmx

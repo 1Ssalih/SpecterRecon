@@ -390,23 +390,30 @@ var ProbeRegistry = []ProbeSpec{
 		Ports:     []int{88},
 		ReadFirst: false,
 		InitialProbe: []byte{
+			// ASN.1 AS-REQ (Application 10)
+			// Sahte principal ile KRB-ERROR tetikle
 			0x6a, 0x81, 0x82, 0x30, 0x81, 0x7f,
-			0xa1, 0x03, 0x02, 0x01, 0x05,
-			0xa2, 0x03, 0x02, 0x01, 0x0a,
+			0xa1, 0x03, 0x02, 0x01, 0x05, // pvno: 5
+			0xa2, 0x03, 0x02, 0x01, 0x0a, // msg-type: AS-REQ (10)
 			0xa4, 0x73, 0x30, 0x71,
 			0xa0, 0x07, 0x03, 0x05, 0x00, 0x00, 0x00, 0x00, 0x10,
 			0xa1, 0x14, 0x30, 0x12, 0xa0, 0x03, 0x02, 0x01, 0x01,
-			0xa1, 0x0b, 0x30, 0x09, 0x1b, 0x07, 'a', 'd', 'm', 'i', 'n', 'i', 's',
-			0xa2, 0x0c, 0x1b, 0x0a, 'R', 'E', 'C', 'O', 'N', '.', 'L', 'O', 'C', 'A', 'L',
-			0xa3, 0x1b, 0x30, 0x19, 0xa0, 0x03, 0x02, 0x01, 0x02,
-			0xa1, 0x12, 0x30, 0x10, 0x1b, 0x06, 'k', 'r', 'b', 't', 'g', 't', 0x1b, 0x06, 'K', 'R', 'B', 'T', 'G', 'T',
-			0xa5, 0x11, 0x18, 0x0f, '2', '0', '3', '0', '0', '1', '0', '1', '0', '0', '0', '0', '0', '0', 'Z',
-			0xa7, 0x04, 0x02, 0x02, 0x12, 0x34,
-			0xa8, 0x08, 0x30, 0x06, 0x02, 0x01, 0x12, 0x02, 0x01, 0x17,
+			0xa1, 0x0b, 0x30, 0x09, 0x1b, 0x07, 0x72, 0x65, 0x63, 0x6f, 0x6e, 0x00, // cname: "recon"
+			0xa2, 0x05, 0x1b, 0x03, 0x41, 0x41, 0x41, // realm: "AAA" (sahte)
+			0xa3, 0x1b, 0x30, 0x19, 0xa0, 0x03, 0x02, 0x01, 0x01,
+			0xa1, 0x12, 0x04, 0x10,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0xa5, 0x11, 0x18, 0x0f, 0x32, 0x30, 0x33, 0x30, 0x31, 0x32, 0x33, 0x31,
+			0x32, 0x33, 0x35, 0x39, 0x35, 0x39, 0x5a,
+			0xa7, 0x03, 0x02, 0x01, 0x17,
+			0xa8, 0x03, 0x02, 0x01, 0x01,
 		},
 		BinaryParser: ParseKerberosProbe,
 		MaxReads:     2,
+		MatchRules:   []ProbeMatchRule{},
 	},
+
 
 	// 14. MongoDB (Port 27017)
 	{
@@ -618,43 +625,103 @@ func ParseMSRPCProbe(port int, data []byte) (core.ProbeResult, bool) {
 
 // ParseKerberosProbe extracts Kerberos Realm names from KRB-ERROR response packets.
 func ParseKerberosProbe(port int, data []byte) (core.ProbeResult, bool) {
-	if len(data) >= 4 && data[0] == 0x7e { // KRB-ERROR tag (Application 30)
-		dataStr := string(data)
-		realm := ""
-		re := regexp.MustCompile(`[A-Z0-9\-]+(?:\.[A-Z0-9\-]+)+`)
-		for _, m := range re.FindAllString(dataStr, -1) {
-			if len(m) >= 4 && strings.Contains(m, ".") {
-				realm = m
-				break
+	if len(data) < 4 {
+		return core.ProbeResult{}, false
+	}
+
+	// ASN.1 Application tag kontrolü
+	appTag := data[0]
+
+	// KRB-ERROR (Application 30 = 0x7e) veya KRB-AS-REP (Application 11 = 0x6b)
+	if appTag != 0x7e && appTag != 0x6b {
+		return core.ProbeResult{}, false
+	}
+
+	dataStr := string(data)
+	realm := ""
+
+	// Method 1: Regex ile realm çıkar (en güvenilir)
+	// Realm genellikle ASCII uppercase string olarak gelir
+	realmRe := regexp.MustCompile(`[A-Z0-9][A-Z0-9\-\.]{3,}(?:\.[A-Z0-9\-]+)+`)
+	matches := realmRe.FindAllString(dataStr, -1)
+	for _, m := range matches {
+		// En uzun match muhtemelen realm'dir
+		if len(m) > len(realm) && !strings.Contains(m, ".COM") && !strings.Contains(m, "EXAMPLE") {
+			realm = m
+		}
+	}
+
+	// Method 2: ASN.1 yapıdan manuel parse (fallback)
+	if realm == "" {
+		// data içinde "DC=" pattern'i ara (LDAP DN formatı)
+		dcRe := regexp.MustCompile(`DC=([A-Za-z0-9\-]+)`)
+		dcMatches := dcRe.FindAllStringSubmatch(dataStr, -1)
+		if len(dcMatches) > 0 {
+			var parts []string
+			for _, m := range dcMatches {
+				parts = append(parts, strings.ToUpper(m[1]))
+			}
+			realm = strings.Join(parts, ".")
+		}
+	}
+
+	// Method 3: Binary data içinde printable ASCII string'leri tara
+	if realm == "" {
+		var candidates []string
+		current := ""
+		for _, b := range data {
+			if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) || (b >= 0x30 && b <= 0x39) || b == '.' || b == '-' {
+				current += string(b)
+			} else {
+				if len(current) >= 4 && strings.Contains(current, ".") {
+					candidates = append(candidates, strings.ToUpper(current))
+				}
+				current = ""
 			}
 		}
-
-		desc := "Kerberos Key Distribution Center"
-		banner := "Kerberos Service (KRB-ERROR)"
-		if realm != "" {
-			desc = fmt.Sprintf("Kerberos KDC (Realm: %s)", realm)
-			banner = fmt.Sprintf("Kerberos KDC (Realm: %s)", realm)
+		if len(current) >= 4 && strings.Contains(current, ".") {
+			candidates = append(candidates, strings.ToUpper(current))
 		}
-
-		return core.ProbeResult{
-			ServiceName: "kerberos",
-			ServiceDesc: desc,
-			Version:     realm,
-			Banner:      banner,
-			ProbeUsed:   "kerberos_asreq_probe",
-			Confidence:  90,
-			Evidence: []core.VersionEvidence{
-				{
-					Source:     "kerberos_asreq_error",
-					Detail:     banner,
-					Confidence: 90,
-				},
-			},
-			IsFinal: true,
-		}, true
+		// En uzun candidate'ı realm olarak al
+		for _, c := range candidates {
+			if len(c) > len(realm) {
+				realm = c
+			}
+		}
 	}
-	return core.ProbeResult{}, false
+
+	if realm == "" {
+		realm = "UNKNOWN_REALM"
+	}
+
+	desc := "Kerberos Key Distribution Center"
+	banner := "Kerberos Service (KRB-ERROR)"
+	if appTag == 0x6b {
+		banner = "Kerberos AS-REP Response"
+	}
+	if realm != "UNKNOWN_REALM" {
+		desc = fmt.Sprintf("Kerberos KDC (Realm: %s)", realm)
+		banner = fmt.Sprintf("Kerberos KDC (Realm: %s)", realm)
+	}
+
+	return core.ProbeResult{
+		ServiceName: "kerberos",
+		ServiceDesc: desc,
+		Version:     realm,
+		Banner:      banner,
+		ProbeUsed:   "kerberos_asreq_probe",
+		Confidence:  90,
+		Evidence: []core.VersionEvidence{
+			{
+				Source:     "kerberos_asreq_error",
+				Detail:     banner,
+				Confidence: 90,
+			},
+		},
+		IsFinal: true,
+	}, true
 }
+
 
 // ParseMongoDBProbe parses MongoDB wire protocol responses.
 func ParseMongoDBProbe(port int, data []byte) (core.ProbeResult, bool) {
@@ -911,40 +978,98 @@ func ProbeWinRMService(ip string, port int, timeout time.Duration) (core.ProbeRe
 	}
 	defer conn.Close()
 
-	soapBody := `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:wsmid="http://schemas.dmtf.org/wbem/wsman/identity/1/wsmanidentity.xsd"><s:Header/><s:Body><wsmid:Identify/></s:Body></s:Envelope>`
-	req := fmt.Sprintf("POST /wsman HTTP/1.1\r\nHost: %s:%d\r\nUser-Agent: SpecterRecon/0.8.0\r\nContent-Type: application/soap+xml;charset=UTF-8\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+	soapBody := `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" 
+            xmlns:wsmid="http://schemas.dmtf.org/wbem/wsman/identity/1/wsmanidentity.xsd">
+  <s:Header/>
+  <s:Body>
+    <wsmid:Identify/>
+  </s:Body>
+</s:Envelope>`
+
+	req := fmt.Sprintf("POST /wsman HTTP/1.1\r\nHost: %s:%d\r\nUser-Agent: SpecterRecon/0.9.0\r\nContent-Type: application/soap+xml;charset=UTF-8\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
 		ip, port, len(soapBody), soapBody)
 
-	_ = conn.SetWriteDeadline(time.Now().Add(1200 * time.Millisecond))
+	_ = conn.SetWriteDeadline(time.Now().Add(2000 * time.Millisecond))
 	if _, err := conn.Write([]byte(req)); err != nil {
 		return core.ProbeResult{}, false
 	}
 
-	buf := make([]byte, 8192)
-	_ = conn.SetReadDeadline(time.Now().Add(1800 * time.Millisecond))
+	// Timeout'u artır (3000ms → 5000ms)
+	buf := make([]byte, 16384)
+	_ = conn.SetReadDeadline(time.Now().Add(5000 * time.Millisecond))
 	n, err := conn.Read(buf)
 	if err != nil || n == 0 {
 		return core.ProbeResult{}, false
 	}
 
 	respStr := string(buf[:n])
-	if strings.Contains(respStr, "Microsoft-HTTPAPI") || strings.Contains(respStr, "wsman") || strings.Contains(respStr, "wsmid:") {
-		var productVer, vendor string
 
+	// HTTP response header'dan Server bilgisini al
+	serverHeader := ""
+	if m := regexp.MustCompile(`(?i)Server:\s*([^\r\n]+)`).FindStringSubmatch(respStr); len(m) > 1 {
+		serverHeader = strings.TrimSpace(m[1])
+	}
+
+	if strings.Contains(respStr, "Microsoft-HTTPAPI") || strings.Contains(respStr, "wsman") || strings.Contains(respStr, "wsmid:") {
+		var productVer, vendor, osVersion string
+
+		// ProductVersion parse
 		if m := regexp.MustCompile(`(?i)<wsmid:ProductVersion[^>]*>([^<]+)</wsmid:ProductVersion>`).FindStringSubmatch(respStr); len(m) > 1 {
 			productVer = strings.TrimSpace(m[1])
 		}
+
+		// ProductVendor parse
 		if m := regexp.MustCompile(`(?i)<wsmid:ProductVendor[^>]*>([^<]+)</wsmid:ProductVendor>`).FindStringSubmatch(respStr); len(m) > 1 {
 			vendor = strings.TrimSpace(m[1])
+		}
+
+		// OS: 10.0.17763 pattern'ini geniş regex ile tara
+		if m := regexp.MustCompile(`(?i)OS:\s*([\d\.]+)`).FindStringSubmatch(respStr); len(m) > 1 {
+			osVersion = strings.TrimSpace(m[1])
+		}
+
+		// Alternatif: "Windows Server" pattern'i
+		if osVersion == "" {
+			if m := regexp.MustCompile(`(?i)(Windows\s+Server\s+[\d\w\s]+)`).FindStringSubmatch(respStr); len(m) > 1 {
+				osVersion = strings.TrimSpace(m[1])
+			}
 		}
 
 		desc := "Microsoft WinRM (WS-Management)"
 		if productVer != "" {
 			desc = fmt.Sprintf("Microsoft WinRM (%s)", productVer)
 		}
+		if osVersion != "" {
+			desc = fmt.Sprintf("Microsoft WinRM (%s, OS: %s)", productVer, osVersion)
+		}
+
 		banner := "Microsoft-HTTPAPI/2.0 (WinRM /wsman)"
 		if vendor != "" && productVer != "" {
 			banner = fmt.Sprintf("%s %s (WS-Management)", vendor, productVer)
+		}
+		if osVersion != "" {
+			banner += fmt.Sprintf(" [OS: %s]", osVersion)
+		}
+
+		// OS versiyonunu çıkarmak için 10.0.XXXXX pattern'ini analiz et
+		if osVersion != "" {
+			parts := strings.Split(osVersion, ".")
+			if len(parts) >= 3 {
+				buildNum := parts[2]
+				switch {
+				case buildNum >= "26100":
+					desc = fmt.Sprintf("Microsoft WinRM (Windows Server 2025, Build %s)", buildNum)
+				case buildNum >= "20348":
+					desc = fmt.Sprintf("Microsoft WinRM (Windows Server 2022, Build %s)", buildNum)
+				case buildNum >= "17763":
+					desc = fmt.Sprintf("Microsoft WinRM (Windows Server 2019, Build %s)", buildNum)
+				case buildNum >= "14393":
+					desc = fmt.Sprintf("Microsoft WinRM (Windows Server 2016, Build %s)", buildNum)
+				case buildNum >= "9600":
+					desc = fmt.Sprintf("Microsoft WinRM (Windows Server 2012 R2, Build %s)", buildNum)
+				}
+			}
 		}
 
 		return core.ProbeResult{
@@ -965,8 +1090,29 @@ func ProbeWinRMService(ip string, port int, timeout time.Duration) (core.ProbeRe
 		}, true
 	}
 
+	// SOAP response gelmedi ama Server header Microsoft-HTTPAPI ise WinRM olarak etiketle
+	if strings.Contains(serverHeader, "Microsoft-HTTPAPI") {
+		return core.ProbeResult{
+			ServiceName: "http",
+			ServiceDesc: "Microsoft WinRM (WS-Management) - SOAP Identify timeout",
+			Version:     serverHeader,
+			Banner:      fmt.Sprintf("%s (WinRM detected via Server header, SOAP response timeout)", serverHeader),
+			ProbeUsed:   "winrm_header_fallback",
+			Confidence:  70,
+			Evidence: []core.VersionEvidence{
+				{
+					Source:     "server_header",
+					Detail:     serverHeader,
+					Confidence: 70,
+				},
+			},
+			IsFinal: true,
+		}, true
+	}
+
 	return core.ProbeResult{}, false
 }
+
 
 // ProbeOracleTNSService probes Oracle TNS Listener on port 1521.
 func ProbeOracleTNSService(ip string, port int, timeout time.Duration) (core.ProbeResult, bool) {

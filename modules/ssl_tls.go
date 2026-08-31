@@ -24,45 +24,80 @@ func AuditSSLService(ip string, port int, timeout time.Duration, hostname ...str
 		Severity: "INFO",
 	}
 
-	sniHost := ""
+	sniHost := ip
 	if len(hostname) > 0 && hostname[0] != "" {
 		sniHost = hostname[0]
 	}
 
-	dialer := &net.Dialer{Timeout: timeout}
+	// ============================================================
+	// TLS VERSION FALLBACK: Birden fazla TLS versiyonu dene
+	// Bazı sunucular sadece belirli TLS versiyonlarını kabul eder
+	// ============================================================
+	tlsVersions := []struct {
+		name string
+		ver  uint16
+	}{
+		{"TLSv1.3", tls.VersionTLS13},
+		{"TLSv1.2", tls.VersionTLS12},
+		{"TLSv1.1", tls.VersionTLS11},
+		{"TLSv1.0", tls.VersionTLS10},
+	}
+
 	var conn *tls.Conn
-	var err error
+	var lastErr error
+	successfulVersion := ""
 
-	// 1. Attempt connection with TLS InsecureSkipVerify and SNI (if hostname available)
-	if sniHost != "" {
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+	for _, tv := range tlsVersions {
+		tlsConf := &tls.Config{
 			InsecureSkipVerify: true,
 			ServerName:         sniHost,
-			MinVersion:         tls.VersionTLS10,
-		})
+			MinVersion:         tv.ver,
+			MaxVersion:         tv.ver,
+		}
+
+		dialer := &net.Dialer{Timeout: timeout}
+		c, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConf)
+		if err == nil {
+			conn = c
+			successfulVersion = tv.name
+			break
+		}
+		lastErr = err
 	}
 
-	// 2. Fallback: Dial without SNI (empty ServerName) for IP-only endpoints or servers rejecting unrecognized SNI
-	if conn == nil || err != nil {
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
-			InsecureSkipVerify: true,
-			ServerName:         "",
-			MinVersion:         tls.VersionTLS10,
-		})
+	if conn == nil {
+		// Fallback without SNI
+		for _, tv := range tlsVersions {
+			tlsConf := &tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         "",
+				MinVersion:         tv.ver,
+				MaxVersion:         tv.ver,
+			}
+			dialer := &net.Dialer{Timeout: timeout}
+			c, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConf)
+			if err == nil {
+				conn = c
+				successfulVersion = tv.name + " (No SNI)"
+				break
+			}
+			lastErr = err
+		}
 	}
 
-	// 3. Fallback: Dial with TLS 1.2+ for modern servers rejecting legacy ClientHello
-	if conn == nil || err != nil {
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+	if conn == nil {
+		// Son çare: MinVersion olmadan dene
+		tlsConf := &tls.Config{
 			InsecureSkipVerify: true,
 			ServerName:         sniHost,
-			MinVersion:         tls.VersionTLS12,
-		})
-	}
-
-	if err != nil {
-		finding.Notes = []string{fmt.Sprintf("TLS bağlantısı kurulamadı: %v", err)}
-		return finding
+		}
+		dialer := &net.Dialer{Timeout: timeout}
+		c, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConf)
+		if err != nil {
+			finding.Notes = []string{fmt.Sprintf("TLS bağlantısı kurulamadı (tüm versiyonlar denendi): %v", lastErr)}
+			return finding
+		}
+		conn = c
 	}
 	defer conn.Close()
 
@@ -79,11 +114,14 @@ func AuditSSLService(ip string, port int, timeout time.Duration, hostname ...str
 	daysLeft := int(cert.NotAfter.Sub(now).Hours() / 24)
 	isExpired := now.After(cert.NotAfter)
 
-	// Check self-signed
 	isSelfSigned := cert.Issuer.CommonName == cert.Subject.CommonName || cert.AuthorityKeyId == nil
 
 	var notes []string
 	severity := "LOW"
+
+	if successfulVersion != "" {
+		notes = append(notes, fmt.Sprintf("Başarılı TLS versiyonu: %s", successfulVersion))
+	}
 
 	if isExpired {
 		notes = append(notes, fmt.Sprintf("Sertifika süresi dolmuş! (%s)", expiryStr))
@@ -102,9 +140,9 @@ func AuditSSLService(ip string, port int, timeout time.Duration, hostname ...str
 		}
 	}
 
-	// Test weak SSL/TLS protocols
+	// Zayıf SSL/TLS protokollerini test et
 	var weakProtos []string
-	protocols := []struct {
+	weakVersions := []struct {
 		name string
 		ver  uint16
 	}{
@@ -113,21 +151,21 @@ func AuditSSLService(ip string, port int, timeout time.Duration, hostname ...str
 		{"TLSv1.1", tls.VersionTLS11},
 	}
 
-	for _, p := range protocols {
-		testConn, err := tls.DialWithDialer(&net.Dialer{Timeout: 1500 * time.Millisecond}, "tcp", addr, &tls.Config{
+	for _, wv := range weakVersions {
+		testConf := &tls.Config{
 			InsecureSkipVerify: true,
 			ServerName:         sniHost,
-			MinVersion:         p.ver,
-			MaxVersion:         p.ver,
-		})
+			MinVersion:         wv.ver,
+			MaxVersion:         wv.ver,
+		}
+		testConn, err := tls.DialWithDialer(&net.Dialer{Timeout: 1500 * time.Millisecond}, "tcp", addr, testConf)
 		if err == nil {
 			_ = testConn.Close()
-			weakProtos = append(weakProtos, p.name)
-			notes = append(notes, fmt.Sprintf("Zayıf protokol destekleniyor: %s", p.name))
+			weakProtos = append(weakProtos, wv.name)
+			notes = append(notes, fmt.Sprintf("Zayıf protokol destekleniyor: %s", wv.name))
 			severity = "HIGH"
 		}
 	}
-
 
 	// SANs (Subject Alternative Names)
 	var sans []string

@@ -24,6 +24,7 @@ quick:
   nextjs: "wordlists/nextjs.txt"
   django: "wordlists/django.txt"
   rails: "wordlists/rails.txt"
+  exchange: "wordlists/exchange.txt"
   default: "wordlists/common.txt"
 
 # Full mod (SecLists kapsamlı listeleri) — --wordlist-size full ile aktif olur
@@ -48,4 +49,6 @@ full:
   nextjs: "wordlists/SecLists/Discovery/Web-Content/Frameworks/nextjs.txt"
   django: "wordlists/SecLists/Discovery/Web-Content/Frameworks/django.txt"
   rails: "wordlists/SecLists/Discovery/Web-Content/Frameworks/ruby-on-rails.txt"
+  exchange: "wordlists/SecLists/Discovery/Web-Content/Service-Specific/Exchange.txt"
   default: "wordlists/SecLists/Discovery/Web-Content/raft-medium-directories.txt"
+

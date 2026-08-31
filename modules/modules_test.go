@@ -1318,3 +1318,188 @@ func TestAuditSSHZeroServices(t *testing.T) {
 	}
 }
 
+func TestKerberosASREQProbe(t *testing.T) {
+	// 1. KRB-ERROR response (0x7e) with realm RECON.LOCAL
+	mockKrbError := []byte{
+		0x7e, 0x40, // KRB-ERROR ASN.1 Application 30
+		0x30, 0x3e,
+		0xa1, 0x03, 0x02, 0x01, 0x05,
+		0xa2, 0x03, 0x02, 0x01, 0x1e, // msg-type: KRB-ERROR (30)
+		0xa4, 0x11, 0x1b, 0x0f, 'C', 'O', 'R', 'P', '.', 'E', 'X', 'A', 'M', 'P', 'L', 'E', '.', 'C', 'O',
+		0xa5, 0x13, 0x30, 0x11, 0xa0, 0x03, 0x02, 0x01, 0x01,
+	}
+
+	res, ok := ParseKerberosProbe(88, mockKrbError)
+	if !ok {
+		t.Fatalf("ParseKerberosProbe başarısız!")
+	}
+	if res.ServiceName != "kerberos" {
+		t.Errorf("Beklenen ServiceName 'kerberos', alinan '%s'", res.ServiceName)
+	}
+	if !strings.Contains(res.Banner, "CORP.EXAMPLE.CO") {
+		t.Errorf("Beklenen Realm 'CORP.EXAMPLE.CO', alinan banner: '%s'", res.Banner)
+	}
+
+	// 2. KRB-ERROR with LDAP DN format DC=LAB,DC=LOCAL
+	mockDNKrb := []byte("~\x30\x30\x2e\xa0\x03\x02\x01\x05DC=LAB,DC=LOCAL\x00\x00")
+	resDN, okDN := ParseKerberosProbe(88, mockDNKrb)
+	if !okDN {
+		t.Fatalf("ParseKerberosProbe DN formatı başarısız!")
+	}
+	if resDN.Version != "LAB.LOCAL" {
+		t.Errorf("Beklenen Version 'LAB.LOCAL', alinan '%s'", resDN.Version)
+	}
+}
+
+func TestWinRMSOAPIdentifyParsing(t *testing.T) {
+	mockSOAPResp := `HTTP/1.1 200 OK
+Content-Type: application/soap+xml;charset=UTF-8
+Server: Microsoft-HTTPAPI/2.0
+Date: Mon, 31 Aug 2026 10:00:00 GMT
+Connection: close
+Content-Length: 450
+
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:wsmid="http://schemas.dmtf.org/wbem/wsman/identity/1/wsmanidentity.xsd">
+  <s:Header/>
+  <s:Body>
+    <wsmid:IdentifyResponse>
+      <wsmid:ProtocolVersion>http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd</wsmid:ProtocolVersion>
+      <wsmid:ProductVendor>Microsoft Corporation</wsmid:ProductVendor>
+      <wsmid:ProductVersion>OS: 10.0.17763 SP: 0.0 Stack: 3.0</wsmid:ProductVersion>
+    </wsmid:IdentifyResponse>
+  </s:Body>
+</s:Envelope>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/soap+xml;charset=UTF-8")
+		w.Header().Set("Server", "Microsoft-HTTPAPI/2.0")
+		_, _ = w.Write([]byte(mockSOAPResp))
+	}))
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	port, _ := strconv.Atoi(u.Port())
+
+	res, ok := ProbeWinRMService("127.0.0.1", port, 2*time.Second)
+	if !ok {
+		t.Fatalf("ProbeWinRMService başarısız!")
+	}
+	if !strings.Contains(res.ServiceDesc, "Windows Server 2019") {
+		t.Errorf("Beklenen ServiceDesc 'Windows Server 2019', alinan '%s'", res.ServiceDesc)
+	}
+	if !strings.Contains(res.Banner, "Microsoft Corporation") {
+		t.Errorf("Beklenen ProductVendor 'Microsoft Corporation', alinan banner '%s'", res.Banner)
+	}
+}
+
+func TestExchangeWordlistSelection(t *testing.T) {
+	svc := core.ServiceDetail{
+		IP:                 "10.0.0.88",
+		Port:               443,
+		ServiceName:        "https",
+		ServiceDescription: "Microsoft Exchange OWA",
+		HTTPTitle:          "Outlook Web App - Sign In",
+		HTTPTechnologies:   []string{"Exchange", "IIS"},
+	}
+
+	wordlists, tag := SelectWordlistForService(svc, nil, "wordlists/common.txt")
+	if len(wordlists) == 0 {
+		t.Fatalf("Wordlist seçilemedi!")
+	}
+	if !strings.Contains(tag, "exchange") {
+		t.Errorf("Beklenen tag 'exchange', alinan '%s'", tag)
+	}
+	if !strings.Contains(wordlists[0], "exchange") {
+		t.Errorf("Beklenen wordlist 'exchange.txt', alinan '%s'", wordlists[0])
+	}
+}
+
+func TestIISCriticalPaths(t *testing.T) {
+	words := []string{"index.html", "about.html"}
+	expanded := GenerateTechnologyExtensionVariants(words, "iis")
+
+	expectedEndpoints := []string{
+		"elmah.axd",
+		"web.config",
+		"Global.asax",
+		"_layouts/15/",
+		"Telerik.Web.UI.WebResource.axd",
+		"api/",
+		"web.config.bak",
+	}
+
+	foundMap := make(map[string]bool)
+	for _, w := range expanded {
+		foundMap[w] = true
+	}
+
+	for _, ep := range expectedEndpoints {
+		if !foundMap[ep] {
+			t.Errorf("IIS kritik endpoint eksik: '%s'", ep)
+		}
+	}
+}
+
+func TestCatchAllMD5BodyHashFiltering(t *testing.T) {
+	// Server returns 403 Forbidden with exact same body for all nonexistent URLs
+	const wildcardBody = "<html><body>403 Forbidden - Access Denied Custom Error</body></html>"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/secret-admin-console" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("<html><body>Welcome Administrator</body></html>"))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(wildcardBody))
+	}))
+	defer server.Close()
+
+	words := []string{"foo", "bar", "baz", "test1234", "secret-admin-console"}
+	findings := FuzzTargetService(server.URL, words, "test", 4, 0)
+
+	if len(findings) != 1 {
+		t.Fatalf("Beklenen 1 bulgu (/secret-admin-console), alinan %d: %+v", len(findings), findings)
+	}
+	if findings[0].Path != "/secret-admin-console" {
+		t.Errorf("Beklenen /secret-admin-console, alinan '%s'", findings[0].Path)
+	}
+}
+
+func TestRobotsTxtBypass(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/robots.txt" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("User-agent: *\nDisallow: /hidden-admin/\nDisallow: /internal-api\n"))
+			return
+		}
+		if r.URL.Path == "/hidden-admin" || r.URL.Path == "/hidden-admin/" {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte("Special Admin Forbidden Page"))
+			return
+		}
+		if r.URL.Path == "/internal-api" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("Internal API Documentation"))
+			return
+		}
+		// Catch-all 302
+		http.Redirect(w, r, "/login", http.StatusFound)
+	}))
+	defer server.Close()
+
+	findings := FuzzTargetService(server.URL, []string{"nonexistent1", "nonexistent2"}, "test", 4, 0)
+
+	foundPaths := make(map[string]bool)
+	for _, f := range findings {
+		foundPaths[f.Path] = true
+	}
+
+	if !foundPaths["/hidden-admin"] && !foundPaths["/hidden-admin/"] {
+		t.Errorf("robots.txt /hidden-admin yolu yakalanamadı: %+v", findings)
+	}
+	if !foundPaths["/internal-api"] {
+		t.Errorf("robots.txt /internal-api yolu yakalanamadı: %+v", findings)
+	}
+}
+
+

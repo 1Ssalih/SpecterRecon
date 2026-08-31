@@ -2,14 +2,18 @@ package modules
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"net"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/specter-recon/recon-tool/core"
 )
+
 
 // WindowsBuildToOSName maps Windows NT build numbers to friendly operating system names.
 func WindowsBuildToOSName(major, minor byte, build uint16) string {
@@ -291,82 +295,348 @@ func decodeUTF16LE(b []byte) string {
 
 // ProbeSMBService connects to SMB port (445 or 139), negotiates SMB2, and extracts NTLMSSP OS/Domain fingerprint without authenticating.
 func ProbeSMBService(ip string, port int, timeout time.Duration) (core.ProbeResult, bool) {
-	addr := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
 		return core.ProbeResult{}, false
 	}
 	defer conn.Close()
 
-	// Step 1: Send SMB2 Negotiate
-	negPkt := BuildSMB2NegotiatePacket()
-	_ = conn.SetWriteDeadline(time.Now().Add(1200 * time.Millisecond))
-	if _, err := conn.Write(negPkt); err != nil {
+	// ============================================================
+	// AŞAMA 1: SMB2 Negotiate Request
+	// ============================================================
+	smb2Negotiate := []byte{
+		// NetBIOS Session Service Header (4 bytes)
+		0x00, 0x00, 0x00, 0x6C, // Length: 108 bytes
+
+		// SMB2 Header (64 bytes)
+		0xFE, 'S', 'M', 'B', // Protocol ID: SMB2
+		0x40, 0x00, // Structure Size: 64
+		0x00, 0x00, // Credit Charge
+		0x00, 0x00, // Status
+		0x00, 0x00, // Command: Negotiate
+		0x01, 0x00, // Credit Request
+		0x00, 0x00, 0x00, 0x00, // Flags
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Next Command
+		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Message ID
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Reserved + Tree ID
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Process ID
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Session ID
+
+		// SMB2 Negotiate Request Body
+		0x24, 0x00, // Structure Size: 36
+		0x08, 0x00, // Dialect Count: 8
+		0x01, 0x00, // Security Mode: Signing Enabled
+		0x00, 0x00, // Reserved
+		0x7F, 0x00, 0x00, 0x00, // Capabilities
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, // Client GUID
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Negotiate Context Offset/Count
+		// Dialects: SMB 2.0.2, 2.1, 3.0, 3.0.2, 3.1.1
+		0x02, 0x02, 0x10, 0x02, 0x00, 0x03, 0x02, 0x03,
+		0x11, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+
+	_ = conn.SetWriteDeadline(time.Now().Add(1500 * time.Millisecond))
+	if _, err := conn.Write(smb2Negotiate); err != nil {
 		return core.ProbeResult{}, false
 	}
 
-	buf := make([]byte, 4096)
-	_ = conn.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
-	n, err := conn.Read(buf)
+	// Negotiate Response oku
+	negBuf := make([]byte, 4096)
+	_ = conn.SetReadDeadline(time.Now().Add(2000 * time.Millisecond))
+	n, err := conn.Read(negBuf)
 	if err != nil || n < 68 {
 		return core.ProbeResult{}, false
 	}
 
-	// Verify SMB2 Header signature: 0xfe 'S' 'M' 'B'
-	if n < 8 || !bytes.Equal(buf[4:8], []byte{0xfe, 'S', 'M', 'B'}) {
-		// Could be SMB1 or invalid response
-		return core.ProbeResult{
-			ServiceName: "microsoft-ds",
-			ServiceDesc: "Microsoft SMB Service",
-			Banner:      "SMB Service (Negotiate OK)",
-			ProbeUsed:   "smb_negotiate",
-			Confidence:  75,
-		}, true
-	}
-
-	// Extract SessionId if any from header (offset 40 in NetBIOS-encapsulated packet -> 4 + 40 = 44)
-	var sessionId uint64
-	if n >= 52 {
-		sessionId = binary.LittleEndian.Uint64(buf[44:52])
-	}
-
 	// Check if security buffer in Negotiate response contains NTLMSSP Type 2 directly
-	if ntlmInfo, err := ParseNTLMSSPChallenge(buf[:n]); err == nil && ntlmInfo.BuildNumber > 0 {
+	if ntlmInfo, err := ParseNTLMSSPChallenge(negBuf[:n]); err == nil && ntlmInfo.BuildNumber > 0 {
 		return buildSMBProbeResult(ntlmInfo, port), true
 	}
 
-	// Step 2: Send Session Setup with NTLMSSP Type 1
-	setupPkt := BuildSMB2SessionSetupNTLMSSP1(sessionId)
-	_ = conn.SetWriteDeadline(time.Now().Add(1200 * time.Millisecond))
-	if _, err := conn.Write(setupPkt); err != nil {
+	// ============================================================
+	// AŞAMA 2: SMB2 Session Setup Request (Anonymous/Null Session)
+	// NTLMSSP Negotiate (Type 1) gönder
+	// ============================================================
+	smb2SessionSetup := []byte{
+		// NetBIOS Header
+		0x00, 0x00, 0x00, 0xA3, // Length: 163 bytes
+
+		// SMB2 Header (64 bytes)
+		0xFE, 'S', 'M', 'B',
+		0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x01, 0x00, // Command: Session Setup
+		0x01, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Message ID: 2
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+		// SMB2 Session Setup Request
+		0x19, 0x00, // Structure Size: 25
+		0x00,       // Flags
+		0x00,       // Security Mode
+		0x00, 0x00, 0x00, 0x00, // Capabilities
+		0x00, 0x00, 0x00, 0x00, // Channel
+		0x58, 0x00, // Security Buffer Offset: 88
+		0x4B, 0x00, // Security Buffer Length: 75
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Previous Session ID
+
+		// NTLMSSP Negotiate (Type 1) - Anonymous
+		'N', 'T', 'L', 'M', 'S', 'S', 'P', 0x00, // Signature
+		0x01, 0x00, 0x00, 0x00, // Type: Negotiate
+		0x05, 0x02, 0x08, 0x00, // Flags: NTLM, Unicode, OEM
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Domain
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Workstation
+		0x06, 0x01, 0xB0, 0x06, 0x00, 0x00, 0x00, 0x0F, // Version (Windows 7)
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+
+	_ = conn.SetWriteDeadline(time.Now().Add(1500 * time.Millisecond))
+	if _, err := conn.Write(smb2SessionSetup); err != nil {
 		return core.ProbeResult{}, false
 	}
 
-	_ = conn.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
-	n, err = conn.Read(buf)
-	if err != nil || n < 32 {
-		return core.ProbeResult{
-			ServiceName: "microsoft-ds",
-			ServiceDesc: "Microsoft SMB2 Service",
-			Banner:      "SMB2 Session Setup Accepted",
-			ProbeUsed:   "smb2_session_setup",
-			Confidence:  80,
-		}, true
+	// Session Setup Response oku
+	ssBuf := make([]byte, 8192)
+	_ = conn.SetReadDeadline(time.Now().Add(2500 * time.Millisecond))
+	ssN, err := conn.Read(ssBuf)
+	if err == nil && ssN >= 32 {
+		info, parseErr := ParseNTLMSSPChallenge(ssBuf[:ssN])
+		if parseErr == nil && info != nil && info.BuildNumber > 0 {
+			return buildSMBProbeResult(info, port), true
+		}
 	}
 
-	ntlmInfo, err := ParseNTLMSSPChallenge(buf[:n])
-	if err == nil && ntlmInfo != nil {
-		return buildSMBProbeResult(ntlmInfo, port), true
+	// ============================================================
+	// AŞAMA 3: FALLBACK — LDAP RootDSE ile OS bilgisi al
+	// SMB parse edilemediyse, 389/636 portundan LDAP RootDSE sorgula
+	// ============================================================
+	ldapPorts := []int{389, 636}
+	for _, ldapPort := range ldapPorts {
+		if ldapRes, ok := probeLDAPForOSInfo(ip, ldapPort, 2000*time.Millisecond); ok {
+			return ldapRes, true
+		}
+	}
+
+	// ============================================================
+	// AŞAMA 4: FALLBACK — NetBIOS Name Query (port 137 UDP)
+	// ============================================================
+	if nbRes, ok := probeNetBIOSName(ip, 137, 1500*time.Millisecond); ok {
+		return nbRes, true
+	}
+
+	// Son çare: Session Setup response'u "SMB2 Service" olarak raporla
+	return core.ProbeResult{
+		ServiceName: "microsoft-ds",
+		ServiceDesc: "Microsoft SMB2 Service",
+		Banner:      "SMB2 Session Setup Accepted (OS detection failed - try LDAP/NetBIOS fallback)",
+		ProbeUsed:   "smb2_session_setup",
+		Confidence:  50,
+		Evidence: []core.VersionEvidence{
+			{
+				Source:     "smb2_session_setup",
+				Detail:     "NTLMSSP Challenge not received, OS version unknown",
+				Confidence: 50,
+			},
+		},
+		IsFinal: true,
+	}, true
+}
+
+// probeLDAPForOSInfo — LDAP RootDSE üzerinden OS bilgisi çeker (fallback)
+func probeLDAPForOSInfo(ip string, port int, timeout time.Duration) (core.ProbeResult, bool) {
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+
+	var conn net.Conn
+	var err error
+
+	if port == 636 {
+		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, &tls.Config{
+			InsecureSkipVerify: true,
+			MinVersion:         tls.VersionTLS10,
+		})
+	} else {
+		conn, err = net.DialTimeout("tcp", addr, timeout)
+	}
+	if err != nil {
+		return core.ProbeResult{}, false
+	}
+	defer conn.Close()
+
+	// LDAP Search Request: (objectClass=*) Base scope, all attributes
+	searchReq := []byte{
+		0x30, 0x38, // SEQUENCE, length 56
+		0x02, 0x01, 0x01, // messageID: 1
+		0x63, 0x33, // SearchRequest, length 51
+		0x04, 0x00, // baseObject: "" (RootDSE)
+		0x0a, 0x01, 0x00, // scope: baseObject
+		0x0a, 0x01, 0x00, // derefAliases: neverDerefAliases
+		0x02, 0x01, 0x00, // sizeLimit: 0
+		0x02, 0x01, 0x00, // timeLimit: 0
+		0x01, 0x01, 0x00, // typesOnly: FALSE
+		0x87, 0x0e, 0x6f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x43, 0x6c, 0x61, 0x73, 0x73, 0x3d, 0x2a, // filter: (objectClass=*)
+		0x30, 0x00, // attributes: none (all)
+	}
+
+	_ = conn.SetWriteDeadline(time.Now().Add(1000 * time.Millisecond))
+	if _, err := conn.Write(searchReq); err != nil {
+		return core.ProbeResult{}, false
+	}
+
+	buf := make([]byte, 4096)
+	_ = conn.SetReadDeadline(time.Now().Add(2000 * time.Millisecond))
+	n, err := conn.Read(buf)
+	if err != nil || n < 20 {
+		return core.ProbeResult{}, false
+	}
+
+	// domainControllerFunctionality parse et
+	funcLevel := -1
+	funcLevelRe := regexp.MustCompile(`domainControllerFunctionality.*?(\d)`)
+	if m := funcLevelRe.FindSubmatch(buf[:n]); len(m) > 1 {
+		if fl, err := strconv.Atoi(string(m[1])); err == nil {
+			funcLevel = fl
+		}
+	}
+
+	// defaultNamingContext parse et (domain bilgisi)
+	namingCtx := ""
+	namingCtxRe := regexp.MustCompile(`defaultNamingContext.*?DC=([^,]+)`)
+	if m := namingCtxRe.FindSubmatch(buf[:n]); len(m) > 1 {
+		namingCtx = strings.ToUpper(string(m[1]))
+	}
+
+	// dnsHostName parse et
+	dnsHost := ""
+	dnsHostRe := regexp.MustCompile(`dnsHostName.*?([a-zA-Z0-9\-\.]+)`)
+	if m := dnsHostRe.FindSubmatch(buf[:n]); len(m) > 1 {
+		dnsHost = string(m[1])
+	}
+
+	if funcLevel < 0 {
+		return core.ProbeResult{}, false
+	}
+
+	osDesc := FunctionalityLevelToWindowsOS(funcLevel)
+	verStr := fmt.Sprintf("FuncLevel %d (%s)", funcLevel, osDesc)
+
+	banner := fmt.Sprintf("LDAP RootDSE (DC Host: %s", dnsHost)
+	if namingCtx != "" {
+		banner += fmt.Sprintf(", Domain: %s", namingCtx)
+	}
+	banner += fmt.Sprintf(", %s)", osDesc)
+
+	return core.ProbeResult{
+		ServiceName: "microsoft-ds",
+		ServiceDesc: fmt.Sprintf("Microsoft SMB (via LDAP: %s)", osDesc),
+		Version:     verStr,
+		Banner:      banner,
+		ProbeUsed:   "ldap_rootdse_fallback",
+		Confidence:  85,
+		Evidence: []core.VersionEvidence{
+			{
+				Source:     "ldap_rootdse",
+				Detail:     banner,
+				Confidence: 85,
+			},
+		},
+		IsFinal: true,
+	}, true
+}
+
+// probeNetBIOSName — NetBIOS Name Query ile bilgisayar adı ve domain bilgisi çeker
+func probeNetBIOSName(ip string, port int, timeout time.Duration) (core.ProbeResult, bool) {
+	// NetBIOS Name Query (UDP port 137) — Node Status Request
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	conn, err := net.DialTimeout("udp", addr, timeout)
+	if err != nil {
+		return core.ProbeResult{}, false
+	}
+	defer conn.Close()
+
+	// NetBIOS Node Status Request
+	nodeStatusReq := []byte{
+		0xA2, 0x48, // Transaction ID
+		0x00, 0x00, // Flags: Query
+		0x00, 0x01, // Questions: 1
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x20,                                                                   // Name length: 32
+		0x43, 0x4B, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, // * (wildcard)
+		0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+		0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+		0x00,       // Name terminator
+		0x00, 0x21, // Type: NBSTAT
+		0x00, 0x01, // Class: IN
+	}
+
+	_ = conn.SetWriteDeadline(time.Now().Add(1000 * time.Millisecond))
+	if _, err := conn.Write(nodeStatusReq); err != nil {
+		return core.ProbeResult{}, false
+	}
+
+	buf := make([]byte, 1024)
+	_ = conn.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
+	n, err := conn.Read(buf)
+	if err != nil || n < 57 {
+		return core.ProbeResult{}, false
+	}
+
+	// NetBIOS Name Table parse et
+	// Offset 56: Number of names
+	nameCount := int(buf[56])
+	computerName := ""
+	domainName := ""
+
+	offset := 57
+	for i := 0; i < nameCount && offset+18 <= n; i++ {
+		name := strings.TrimSpace(string(buf[offset : offset+15]))
+		nameType := buf[offset+15]
+		flags := binary.BigEndian.Uint16(buf[offset+16 : offset+18])
+
+		// Group name flag (bit 15) kontrolü
+		isGroup := (flags & 0x8000) != 0
+
+		if nameType == 0x00 && !isGroup && computerName == "" {
+			computerName = name
+		}
+		if nameType == 0x00 && isGroup && domainName == "" {
+			domainName = name
+		}
+		offset += 18
+	}
+
+	if computerName == "" && domainName == "" {
+		return core.ProbeResult{}, false
+	}
+
+	banner := "NetBIOS Node Status"
+	if computerName != "" {
+		banner += fmt.Sprintf(" (Computer: %s", computerName)
+		if domainName != "" {
+			banner += fmt.Sprintf(", Domain: %s", domainName)
+		}
+		banner += ")"
 	}
 
 	return core.ProbeResult{
 		ServiceName: "microsoft-ds",
-		ServiceDesc: "Microsoft SMB2 Protocol",
-		Banner:      "SMB2 Active",
-		ProbeUsed:   "smb2_probe",
-		Confidence:  80,
+		ServiceDesc: "Microsoft SMB (NetBIOS Name Query)",
+		Banner:      banner,
+		ProbeUsed:   "netbios_name_query",
+		Confidence:  60,
+		Evidence: []core.VersionEvidence{
+			{
+				Source:     "netbios_nbstat",
+				Detail:     banner,
+				Confidence: 60,
+			},
+		},
+		IsFinal: true,
 	}, true
 }
+
 
 func buildSMBProbeResult(ntlm *NTLMSSPInfo, port int) core.ProbeResult {
 	svcName := "microsoft-ds"
