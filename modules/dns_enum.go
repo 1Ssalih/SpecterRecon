@@ -32,133 +32,155 @@ func IsDomainName(target string) bool {
 	return true
 }
 
-// ResolveDomainDNS performs comprehensive A, AAAA, CNAME, MX, NS, and TXT record resolution for a domain.
+// ResolveDomainDNS performs comprehensive A, AAAA, CNAME, MX, NS, and TXT record resolution for a domain with isolated timeouts.
 func ResolveDomainDNS(domain string) []core.DNSFinding {
 	domain = strings.TrimSpace(domain)
 	var findings []core.DNSFinding
 	seen := make(map[string]bool)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	var r net.Resolver
 
-	// 1. A and AAAA records (prefer IPv4 first for stable routing)
-	ips, err := r.LookupIP(ctx, "ip4", domain)
-	if err == nil && len(ips) > 0 {
-		for _, ip := range ips {
-			key := fmt.Sprintf("%s:%s:A", domain, ip.String())
-			if !seen[key] {
-				seen[key] = true
-				findings = append(findings, core.DNSFinding{
-					Hostname:   domain,
-					IP:         ip.String(),
-					RecordType: "A",
-					Source:     "root_resolution",
-				})
-			}
-		}
-	} else {
-		ips, err = r.LookupIP(ctx, "ip", domain)
-		if err == nil {
+	// 1. A and AAAA records — AYRI context (5s)
+	func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ips, err := r.LookupIP(ctx, "ip4", domain)
+		if err == nil && len(ips) > 0 {
 			for _, ip := range ips {
-				recType := "A"
-				if ip.To4() == nil {
-					recType = "AAAA"
-				}
-				key := fmt.Sprintf("%s:%s:%s", domain, ip.String(), recType)
+				key := fmt.Sprintf("%s:%s:A", domain, ip.String())
 				if !seen[key] {
 					seen[key] = true
 					findings = append(findings, core.DNSFinding{
 						Hostname:   domain,
 						IP:         ip.String(),
-						RecordType: recType,
+						RecordType: "A",
+						Source:     "root_resolution",
+					})
+				}
+			}
+		} else {
+			ips, err = r.LookupIP(ctx, "ip", domain)
+			if err == nil {
+				for _, ip := range ips {
+					recType := "A"
+					if ip.To4() == nil {
+						recType = "AAAA"
+					}
+					key := fmt.Sprintf("%s:%s:%s", domain, ip.String(), recType)
+					if !seen[key] {
+						seen[key] = true
+						findings = append(findings, core.DNSFinding{
+							Hostname:   domain,
+							IP:         ip.String(),
+							RecordType: recType,
+							Source:     "root_resolution",
+						})
+					}
+				}
+			}
+		}
+	}()
+
+	// 2. CNAME Record — AYRI context (3s)
+	func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if cname, err := r.LookupCNAME(ctx, domain); err == nil && cname != "" {
+			cnameClean := strings.TrimSuffix(cname, ".")
+			if cnameClean != domain {
+				key := fmt.Sprintf("%s:%s:CNAME", domain, cnameClean)
+				if !seen[key] {
+					seen[key] = true
+					findings = append(findings, core.DNSFinding{
+						Hostname:   domain,
+						RecordType: "CNAME",
+						Value:      cnameClean,
 						Source:     "root_resolution",
 					})
 				}
 			}
 		}
-	}
+	}()
 
-	// 2. CNAME Record
-	if cname, err := r.LookupCNAME(ctx, domain); err == nil && cname != "" && strings.TrimSuffix(cname, ".") != domain {
-		cnameClean := strings.TrimSuffix(cname, ".")
-		key := fmt.Sprintf("%s:%s:CNAME", domain, cnameClean)
-		if !seen[key] {
-			seen[key] = true
-			findings = append(findings, core.DNSFinding{
-				Hostname:   domain,
-				RecordType: "CNAME",
-				Value:      cnameClean,
-				Source:     "root_resolution",
-			})
-		}
-	}
-
-	// 3. MX Records (Mail Exchangers)
-	if mxRecords, err := r.LookupMX(ctx, domain); err == nil {
-		for _, mx := range mxRecords {
-			mxHost := strings.TrimSuffix(mx.Host, ".")
-			key := fmt.Sprintf("%s:%s:MX", domain, mxHost)
-			if !seen[key] {
-				seen[key] = true
-				// Resolve MX host to IP
-				mxIP := ""
-				if mxIPs, err := r.LookupIP(ctx, "ip4", mxHost); err == nil && len(mxIPs) > 0 {
-					mxIP = mxIPs[0].String()
+	// 3. MX Records — AYRI context (5s)
+	func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if mxRecords, err := r.LookupMX(ctx, domain); err == nil {
+			for _, mx := range mxRecords {
+				mxHost := strings.TrimSuffix(mx.Host, ".")
+				key := fmt.Sprintf("%s:%s:MX", domain, mxHost)
+				if !seen[key] {
+					seen[key] = true
+					mxIP := ""
+					// MX host IP resolution — AYRI context (3s)
+					subCtx, subCancel := context.WithTimeout(context.Background(), 3*time.Second)
+					if mxIPs, err := r.LookupIP(subCtx, "ip4", mxHost); err == nil && len(mxIPs) > 0 {
+						mxIP = mxIPs[0].String()
+					}
+					subCancel()
+					findings = append(findings, core.DNSFinding{
+						Hostname:   mxHost,
+						IP:         mxIP,
+						RecordType: "MX",
+						Value:      fmt.Sprintf("Pref:%d -> %s", mx.Pref, mxHost),
+						Source:     "root_resolution",
+					})
 				}
-				findings = append(findings, core.DNSFinding{
-					Hostname:   mxHost,
-					IP:         mxIP,
-					RecordType: "MX",
-					Value:      fmt.Sprintf("Pref:%d -> %s", mx.Pref, mxHost),
-					Source:     "root_resolution",
-				})
 			}
 		}
-	}
+	}()
 
-	// 4. NS Records (Name Servers)
-	if nsRecords, err := r.LookupNS(ctx, domain); err == nil {
-		for _, ns := range nsRecords {
-			nsHost := strings.TrimSuffix(ns.Host, ".")
-			key := fmt.Sprintf("%s:%s:NS", domain, nsHost)
-			if !seen[key] {
-				seen[key] = true
-				nsIP := ""
-				if nsIPs, err := r.LookupIP(ctx, "ip4", nsHost); err == nil && len(nsIPs) > 0 {
-					nsIP = nsIPs[0].String()
+	// 4. NS Records — AYRI context (5s)
+	func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if nsRecords, err := r.LookupNS(ctx, domain); err == nil {
+			for _, ns := range nsRecords {
+				nsHost := strings.TrimSuffix(ns.Host, ".")
+				key := fmt.Sprintf("%s:%s:NS", domain, nsHost)
+				if !seen[key] {
+					seen[key] = true
+					nsIP := ""
+					subCtx, subCancel := context.WithTimeout(context.Background(), 3*time.Second)
+					if nsIPs, err := r.LookupIP(subCtx, "ip4", nsHost); err == nil && len(nsIPs) > 0 {
+						nsIP = nsIPs[0].String()
+					}
+					subCancel()
+					findings = append(findings, core.DNSFinding{
+						Hostname:   nsHost,
+						IP:         nsIP,
+						RecordType: "NS",
+						Value:      nsHost,
+						Source:     "root_resolution",
+					})
 				}
-				findings = append(findings, core.DNSFinding{
-					Hostname:   nsHost,
-					IP:         nsIP,
-					RecordType: "NS",
-					Value:      nsHost,
-					Source:     "root_resolution",
-				})
 			}
 		}
-	}
+	}()
 
-	// 5. TXT Records (SPF, DMARC, Domain Validations)
-	if txtRecords, err := r.LookupTXT(ctx, domain); err == nil {
-		for _, txt := range txtRecords {
-			trimmedTxt := strings.TrimSpace(txt)
-			if trimmedTxt == "" {
-				continue
-			}
-			key := fmt.Sprintf("%s:%s:TXT", domain, trimmedTxt)
-			if !seen[key] {
-				seen[key] = true
-				findings = append(findings, core.DNSFinding{
-					Hostname:   domain,
-					RecordType: "TXT",
-					Value:      trimmedTxt,
-					Source:     "root_resolution",
-				})
+	// 5. TXT Records — AYRI context (3s)
+	func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if txtRecords, err := r.LookupTXT(ctx, domain); err == nil {
+			for _, txt := range txtRecords {
+				trimmedTxt := strings.TrimSpace(txt)
+				if trimmedTxt == "" {
+					continue
+				}
+				key := fmt.Sprintf("%s:%s:TXT", domain, trimmedTxt)
+				if !seen[key] {
+					seen[key] = true
+					findings = append(findings, core.DNSFinding{
+						Hostname:   domain,
+						RecordType: "TXT",
+						Value:      trimmedTxt,
+						Source:     "root_resolution",
+					})
+				}
 			}
 		}
-	}
+	}()
 
 	return findings
 }

@@ -351,10 +351,13 @@ var ProbeRegistry = []ProbeSpec{
 
 	// 10. SMB / NetBIOS (Port 445, 139)
 	{
-		Name:      "microsoft-ds",
-		Ports:     []int{445, 139},
-		ReadFirst: false,
+		Name:         "microsoft-ds",
+		Ports:        []int{445, 139},
+		ReadFirst:    false,
+		BinaryParser: ParseSMBProbe,
+		MaxReads:     3,
 	},
+
 
 	// 11. LDAP / LDAPS (Port 389, 636, 3268, 3269)
 	{
@@ -623,16 +626,99 @@ func ParseMSRPCProbe(port int, data []byte) (core.ProbeResult, bool) {
 	return core.ProbeResult{}, false
 }
 
+// ParseSMBProbe parses SMB negotiate responses and NTLMSSP Challenge packets.
+func ParseSMBProbe(port int, data []byte) (core.ProbeResult, bool) {
+	if len(data) < 4 {
+		return core.ProbeResult{}, false
+	}
+
+	// NetBIOS Session Service header kontrolü
+	if data[0] == 0x82 || data[0] == 0x83 || data[0] == 0x80 || data[0] == 0x81 {
+		return core.ProbeResult{
+			ServiceName: "netbios-ssn",
+			ServiceDesc: "NetBIOS Session Service (SMB Transport)",
+			Banner:      "NetBIOS Session Service",
+			ProbeUsed:   "netbios_session",
+			Confidence:  70,
+			IsFinal:     false, // Daha derin probe gerekli
+		}, true
+	}
+
+	// SMB2 Protocol ID kontrolü: 0xFE 'S' 'M' 'B'
+	if len(data) >= 4 && data[0] == 0xFE && data[1] == 'S' && data[2] == 'M' && data[3] == 'B' {
+		// SMB2 Negotiate Response veya Session Setup Response
+		// NTLMSSP Challenge (Type 2) paketi ara
+		ntlmsspSig := []byte{'N', 'T', 'L', 'M', 'S', 'S', 'P', 0x00}
+		idx := bytes.Index(data, ntlmsspSig)
+		if idx >= 0 && idx+56 <= len(data) {
+			// NTLMSSP Type 2 (Challenge) bulundu
+			msgType := data[idx+8]
+			if msgType == 0x02 {
+				// Version field (offset 48 from NTLMSSP signature)
+				if idx+56 <= len(data) {
+					major := data[idx+48]
+					minor := data[idx+49]
+					build := int(data[idx+50]) | int(data[idx+51])<<8
+
+					osDesc := "Windows"
+					switch {
+					case build >= 26100:
+						osDesc = "Windows Server 2025"
+					case build >= 20348:
+						osDesc = "Windows Server 2022"
+					case build >= 17763:
+						osDesc = "Windows Server 2019"
+					case build >= 14393:
+						osDesc = "Windows Server 2016"
+					case build >= 9600:
+						osDesc = "Windows Server 2012 R2"
+					case build >= 9200:
+						osDesc = "Windows Server 2012"
+					case build >= 7601:
+						osDesc = "Windows Server 2008 R2"
+					}
+
+					banner := fmt.Sprintf("SMB2 NTLMSSP (OS: %s, Build: %d, Version: %d.%d)",
+						osDesc, build, major, minor)
+
+					return core.ProbeResult{
+						ServiceName: "microsoft-ds",
+						ServiceDesc: fmt.Sprintf("Microsoft SMB2 (%s)", osDesc),
+						Version:     fmt.Sprintf("Build %d", build),
+						Banner:      banner,
+						ProbeUsed:   "smb2_ntlmssp",
+						Confidence:  95,
+						Evidence: []core.VersionEvidence{
+							{Source: "ntlmssp_challenge", Detail: banner, Confidence: 95},
+						},
+						IsFinal: true,
+					}, true
+				}
+			}
+		}
+
+		// NTLMSSP bulunamadı ama SMB2 response var
+		return core.ProbeResult{
+			ServiceName: "microsoft-ds",
+			ServiceDesc: "Microsoft SMB2 Service",
+			Banner:      "SMB2 Protocol Detected (NTLMSSP not found)",
+			ProbeUsed:   "smb2_negotiate",
+			Confidence:  60,
+			IsFinal:     true,
+		}, true
+	}
+
+	return core.ProbeResult{}, false
+}
+
 // ParseKerberosProbe extracts Kerberos Realm names from KRB-ERROR response packets.
 func ParseKerberosProbe(port int, data []byte) (core.ProbeResult, bool) {
 	if len(data) < 4 {
 		return core.ProbeResult{}, false
 	}
 
-	// ASN.1 Application tag kontrolü
+	// ASN.1 Application tag kontrolü (KRB-ERROR = 0x7e, KRB-AS-REP = 0x6b)
 	appTag := data[0]
-
-	// KRB-ERROR (Application 30 = 0x7e) veya KRB-AS-REP (Application 11 = 0x6b)
 	if appTag != 0x7e && appTag != 0x6b {
 		return core.ProbeResult{}, false
 	}
@@ -640,21 +726,24 @@ func ParseKerberosProbe(port int, data []byte) (core.ProbeResult, bool) {
 	dataStr := string(data)
 	realm := ""
 
-	// Method 1: Regex ile realm çıkar (en güvenilir)
-	// Realm genellikle ASCII uppercase string olarak gelir
-	realmRe := regexp.MustCompile(`[A-Z0-9][A-Z0-9\-\.]{3,}(?:\.[A-Z0-9\-]+)+`)
+	// Method 1: Büyük/küçük harf karışık domain pattern
+	realmRe := regexp.MustCompile(`(?i)[A-Za-z0-9][A-Za-z0-9\-]{2,}(?:\.[A-Za-z0-9\-]+)+`)
 	matches := realmRe.FindAllString(dataStr, -1)
 	for _, m := range matches {
-		// En uzun match muhtemelen realm'dir
-		if len(m) > len(realm) && !strings.Contains(m, ".COM") && !strings.Contains(m, "EXAMPLE") {
-			realm = m
+		upperM := strings.ToUpper(m)
+		// Yaygın false positive'leri filtrele
+		if strings.Contains(upperM, "RECON") || strings.Contains(upperM, "LOCAL") ||
+			strings.Contains(upperM, "EXAMPLE") || strings.Contains(upperM, "TEST") {
+			continue
+		}
+		if len(upperM) > len(realm) {
+			realm = upperM
 		}
 	}
 
-	// Method 2: ASN.1 yapıdan manuel parse (fallback)
+	// Method 2: DC= pattern (LDAP DN formatı)
 	if realm == "" {
-		// data içinde "DC=" pattern'i ara (LDAP DN formatı)
-		dcRe := regexp.MustCompile(`DC=([A-Za-z0-9\-]+)`)
+		dcRe := regexp.MustCompile(`(?i)DC=([A-Za-z0-9\-]+)`)
 		dcMatches := dcRe.FindAllStringSubmatch(dataStr, -1)
 		if len(dcMatches) > 0 {
 			var parts []string
@@ -670,7 +759,8 @@ func ParseKerberosProbe(port int, data []byte) (core.ProbeResult, bool) {
 		var candidates []string
 		current := ""
 		for _, b := range data {
-			if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) || (b >= 0x30 && b <= 0x39) || b == '.' || b == '-' {
+			if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') ||
+				(b >= '0' && b <= '9') || b == '.' || b == '-' {
 				current += string(b)
 			} else {
 				if len(current) >= 4 && strings.Contains(current, ".") {
@@ -682,7 +772,6 @@ func ParseKerberosProbe(port int, data []byte) (core.ProbeResult, bool) {
 		if len(current) >= 4 && strings.Contains(current, ".") {
 			candidates = append(candidates, strings.ToUpper(current))
 		}
-		// En uzun candidate'ı realm olarak al
 		for _, c := range candidates {
 			if len(c) > len(realm) {
 				realm = c
@@ -695,9 +784,11 @@ func ParseKerberosProbe(port int, data []byte) (core.ProbeResult, bool) {
 	}
 
 	desc := "Kerberos Key Distribution Center"
-	banner := "Kerberos Service (KRB-ERROR)"
-	if appTag == 0x6b {
-		banner = "Kerberos AS-REP Response"
+	banner := "Kerberos Service"
+	if appTag == 0x7e {
+		banner = "Kerberos KRB-ERROR"
+	} else if appTag == 0x6b {
+		banner = "Kerberos AS-REP"
 	}
 	if realm != "UNKNOWN_REALM" {
 		desc = fmt.Sprintf("Kerberos KDC (Realm: %s)", realm)
@@ -712,15 +803,12 @@ func ParseKerberosProbe(port int, data []byte) (core.ProbeResult, bool) {
 		ProbeUsed:   "kerberos_asreq_probe",
 		Confidence:  90,
 		Evidence: []core.VersionEvidence{
-			{
-				Source:     "kerberos_asreq_error",
-				Detail:     banner,
-				Confidence: 90,
-			},
+			{Source: "kerberos_response", Detail: banner, Confidence: 90},
 		},
 		IsFinal: true,
 	}, true
 }
+
 
 
 // ParseMongoDBProbe parses MongoDB wire protocol responses.
@@ -995,15 +1083,27 @@ func ProbeWinRMService(ip string, port int, timeout time.Duration) (core.ProbeRe
 		return core.ProbeResult{}, false
 	}
 
-	// Timeout'u artır (3000ms → 5000ms)
-	buf := make([]byte, 16384)
+	// Timeout'u artır ve io.ReadAll mantığıyla tüm response'u oku
 	_ = conn.SetReadDeadline(time.Now().Add(5000 * time.Millisecond))
-	n, err := conn.Read(buf)
-	if err != nil || n == 0 {
+
+	var allData []byte
+	buf := make([]byte, 4096)
+	for {
+		n, err := conn.Read(buf)
+		if n > 0 {
+			allData = append(allData, buf[:n]...)
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	if len(allData) == 0 {
 		return core.ProbeResult{}, false
 	}
 
-	respStr := string(buf[:n])
+	respStr := string(allData)
+
 
 	// HTTP response header'dan Server bilgisini al
 	serverHeader := ""
@@ -1393,6 +1493,43 @@ func GrabServiceBanner(ip string, port int, timeout time.Duration) core.ProbeRes
 
 	// 1. Specialized protocol probes for ports that require tailored negotiation
 	if port == 445 || port == 139 {
+		// SMB2 Negotiate Request gönder
+		smb2Negotiate := []byte{
+			0x00, 0x00, 0x00, 0x6C, // NetBIOS length
+			0xFE, 'S', 'M', 'B', // SMB2 Protocol ID
+			0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Header
+			0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x24, 0x00, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00,
+			0x7F, 0x00, 0x00, 0x00,
+			0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+			0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x02, 0x02, 0x10, 0x02, 0x00, 0x03, 0x02, 0x03,
+			0x11, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		}
+
+		addr := net.JoinHostPort(ip, strconv.Itoa(port))
+		conn, err := net.DialTimeout("tcp", addr, timeout)
+		if err == nil {
+			defer conn.Close()
+			_ = conn.SetWriteDeadline(time.Now().Add(1500 * time.Millisecond))
+			if _, err := conn.Write(smb2Negotiate); err == nil {
+				buf := make([]byte, 4096)
+				_ = conn.SetReadDeadline(time.Now().Add(2000 * time.Millisecond))
+				n, err := conn.Read(buf)
+				if err == nil && n > 0 {
+					if res, ok := ParseSMBProbe(port, buf[:n]); ok && res.Confidence >= 75 {
+						return res
+					}
+				}
+			}
+		}
+
 		if res, ok := ProbeSMBService(ip, port, timeout); ok && res.Confidence >= 75 {
 			return res
 		}
@@ -1401,6 +1538,7 @@ func GrabServiceBanner(ip string, port int, timeout time.Duration) core.ProbeRes
 			return res
 		}
 	}
+
 
 	if port == 389 || port == 636 || port == 3268 || port == 3269 {
 		isSSL := port == 636 || port == 3269
